@@ -13,6 +13,8 @@ namespace Inedo.BuildMasterExtensions.YouTrack
     [CustomEditor(typeof(YouTrackIssueTrackingProviderEditor))]
     public sealed class YouTrackIssueTrackingProvider : IssueTrackingProviderBase, ICategoryFilterable, IUpdatingProvider
     {
+        internal const string AnyProjectCategory = "any project";
+
         private Lazy<YouTrackSession> session;
 
         public YouTrackIssueTrackingProvider()
@@ -64,7 +66,7 @@ namespace Inedo.BuildMasterExtensions.YouTrack
         }
         public IssueTrackerCategory[] GetCategories()
         {
-            return this.session.Value.GetProjects().ToArray();
+            return new[] { new IssueTrackerCategory(AnyProjectCategory, AnyProjectCategory) }.Concat(this.session.Value.GetProjects()).ToArray();
         }
         public override IssueTrackerIssue[] GetIssues(string releaseNumber)
         {

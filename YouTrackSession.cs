@@ -55,22 +55,35 @@ namespace Inedo.BuildMasterExtensions.YouTrack
         {
             this.Connect();
 
-            var xdoc = this.DownloadXDocument(
-                WebRequestMethods.Http.Get,
-                "issue/byproject/" + Uri.EscapeUriString(projectId),
-                new KeyValuePair<string, string>("max", maxIssues.ToString()),
-                new KeyValuePair<string, string>("filter", this.releaseField + ":" + releaseNumber)
-            );
+            XDocument xdoc;
+            if (projectId == YouTrackIssueTrackingProvider.AnyProjectCategory)
+            {
+                xdoc = this.DownloadXDocument(
+                    WebRequestMethods.Http.Get,
+                    "issue",
+                    new KeyValuePair<string, string>("max", maxIssues.ToString()),
+                    new KeyValuePair<string, string>("filter", this.releaseField + ":" + releaseNumber)
+                );
+            }
+            else
+            {
+                xdoc = this.DownloadXDocument(
+                    WebRequestMethods.Http.Get,
+                    "issue/byproject/" + Uri.EscapeUriString(projectId),
+                    new KeyValuePair<string, string>("max", maxIssues.ToString()),
+                    new KeyValuePair<string, string>("filter", this.releaseField + ":" + releaseNumber)
+                );
+            }
 
             return xdoc
-                .Descendants("issue")
-                .Select(i => new YouTrackIssue(
-                    (string)i.Attribute("id"),
-                    (string)i.Descendants("value").FirstOrDefault(v => v.Ancestors("field").Any(f => string.Equals((string)f.Attribute("name"), "State", StringComparison.OrdinalIgnoreCase))),
-                    (string)i.Descendants("value").FirstOrDefault(v => v.Ancestors("field").Any(f => string.Equals((string)f.Attribute("name"), "summary", StringComparison.OrdinalIgnoreCase))),
-                    (string)i.Descendants("value").FirstOrDefault(v => v.Ancestors("field").Any(f => string.Equals((string)f.Attribute("name"), "description", StringComparison.OrdinalIgnoreCase))),
-                    releaseNumber,
-                    i.Descendants("value").Any(v => v.Ancestors("field").Any(f => string.Equals((string)f.Attribute("name"), "resolved", StringComparison.OrdinalIgnoreCase)))));
+                    .Descendants("issue")
+                    .Select(i => new YouTrackIssue(
+                        (string)i.Attribute("id"),
+                        (string)i.Descendants("value").FirstOrDefault(v => v.Ancestors("field").Any(f => string.Equals((string)f.Attribute("name"), "State", StringComparison.OrdinalIgnoreCase))),
+                        (string)i.Descendants("value").FirstOrDefault(v => v.Ancestors("field").Any(f => string.Equals((string)f.Attribute("name"), "summary", StringComparison.OrdinalIgnoreCase))),
+                        (string)i.Descendants("value").FirstOrDefault(v => v.Ancestors("field").Any(f => string.Equals((string)f.Attribute("name"), "description", StringComparison.OrdinalIgnoreCase))),
+                        releaseNumber,
+                        i.Descendants("value").Any(v => v.Ancestors("field").Any(f => string.Equals((string)f.Attribute("name"), "resolved", StringComparison.OrdinalIgnoreCase)))));
         }
         public void ApplyCommandToIssue(string issueId, string command, string comment = null)
         {
