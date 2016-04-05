@@ -1,15 +1,16 @@
 ﻿using System;
+using System.ComponentModel;
 using System.Linq;
 using Inedo.BuildMaster;
 using Inedo.BuildMaster.Extensibility.Providers;
 using Inedo.BuildMaster.Extensibility.Providers.IssueTracking;
 using Inedo.BuildMaster.Web;
+using Inedo.Serialization;
 
 namespace Inedo.BuildMasterExtensions.YouTrack
 {
-    [ProviderProperties(
-        "YouTrack",
-        "Issue tracking provider for JetBrains YouTrack.")]
+    [DisplayName("YouTrack")]
+    [Description("Issue tracking provider for JetBrains YouTrack.")]
     [CustomEditor(typeof(YouTrackIssueTrackingProviderEditor))]
     public sealed class YouTrackIssueTrackingProvider : IssueTrackingProviderBase, ICategoryFilterable, IUpdatingProvider
     {

@@ -21,7 +21,7 @@ namespace Inedo.BuildMasterExtensions.YouTrack
         public YouTrackSession(string baseUrl, string userName, string password, string releaseField)
         {
             if (string.IsNullOrEmpty(baseUrl))
-                throw new ArgumentNullException("baseUrl");
+                throw new ArgumentNullException(nameof(baseUrl));
 
             this.restUri = new Uri(new Uri(baseUrl.EndsWith("/") ? baseUrl : baseUrl + "/"), "rest/");
             this.userName = userName;
