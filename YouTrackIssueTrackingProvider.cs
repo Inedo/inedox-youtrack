@@ -62,10 +62,10 @@ namespace Inedo.BuildMasterExtensions.YouTrack
             if (string.IsNullOrEmpty(releaseNumber))
                 throw new ArgumentNullException("releaseNumber");
                 
-            var categoryId = (this.CategoryIdFilter == null || this.CategoryIdFilter.Length == 0)
-                ? new IssueTrackerCategory(AnyProjectCategory, AnyProjectCategory)
+            var projectId = (this.CategoryIdFilter == null || this.CategoryIdFilter.Length == 0)
+                ? AnyProjectCategory
                 : this.CategoryIdFilter[0];
-            return this.session.Value.GetIssues(categoryId, releaseNumber, this.MaxIssues).ToArray();
+            return this.session.Value.GetIssues(projectId, releaseNumber, this.MaxIssues).ToArray();
         }
         public override bool IsIssueClosed(IssueTrackerIssue issue)
         {
