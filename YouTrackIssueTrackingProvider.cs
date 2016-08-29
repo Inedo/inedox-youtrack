@@ -63,7 +63,7 @@ namespace Inedo.BuildMasterExtensions.YouTrack
                 throw new ArgumentNullException("releaseNumber");
                 
             var categoryId = (this.CategoryIdFilter == null || this.CategoryIdFilter.Length == 0)
-                ? IssueTrackerCategory(AnyProjectCategory, AnyProjectCategory)
+                ? new IssueTrackerCategory(AnyProjectCategory, AnyProjectCategory)
                 : this.CategoryIdFilter[0];
             return this.session.Value.GetIssues(categoryId, releaseNumber, this.MaxIssues).ToArray();
         }
