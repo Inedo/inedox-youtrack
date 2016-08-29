@@ -74,7 +74,7 @@ namespace Inedo.BuildMasterExtensions.YouTrack
 
             return ((YouTrackIssue)issue).IsResolved;
         }
-        public override bool IsAvailable() => return true;
+        public override bool IsAvailable() => true;
         public override string ToString() => "Issue tracking provider for JetBrains YouTrack.";
         public override void ValidateConnection()
         {
