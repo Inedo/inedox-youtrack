@@ -37,22 +37,10 @@ namespace Inedo.BuildMasterExtensions.YouTrack
         public int MaxIssues { get; set; }
         [Persistent]
         public string[] CategoryIdFilter { get; set; }
-        public string[] CategoryTypeNames
-        {
-            get { return new[] { "Project" }; }
-        }
-        bool IUpdatingProvider.CanAppendIssueDescriptions
-        {
-            get { return true; }
-        }
-        bool IUpdatingProvider.CanChangeIssueStatuses
-        {
-            get { return true; }
-        }
-        bool IUpdatingProvider.CanCloseIssues
-        {
-            get { return false; }
-        }
+        public string[] CategoryTypeNames =>  new[] { "Project" };
+        bool IUpdatingProvider.CanAppendIssueDescriptions => true;
+        bool IUpdatingProvider.CanChangeIssueStatuses => true;
+        bool IUpdatingProvider.CanCloseIssues => false;
 
         public override string GetIssueUrl(IssueTrackerIssue issue)
         {
@@ -73,8 +61,11 @@ namespace Inedo.BuildMasterExtensions.YouTrack
         {
             if (string.IsNullOrEmpty(releaseNumber))
                 throw new ArgumentNullException("releaseNumber");
-
-            return this.session.Value.GetIssues(this.CategoryIdFilter[0], releaseNumber, this.MaxIssues).ToArray();
+                
+            var categoryId = (this.CategoryIdFilter == null || this.CategoryIdFilter.Length == 0)
+                ? IssueTrackerCategory(AnyProjectCategory, AnyProjectCategory)
+                : this.CategoryIdFilter[0];
+            return this.session.Value.GetIssues(categoryId, releaseNumber, this.MaxIssues).ToArray();
         }
         public override bool IsIssueClosed(IssueTrackerIssue issue)
         {
@@ -83,14 +74,8 @@ namespace Inedo.BuildMasterExtensions.YouTrack
 
             return ((YouTrackIssue)issue).IsResolved;
         }
-        public override bool IsAvailable()
-        {
-            return true;
-        }
-        public override string ToString()
-        {
-            return "Issue tracking provider for JetBrains YouTrack.";
-        }
+        public override bool IsAvailable() => return true;
+        public override string ToString() => "Issue tracking provider for JetBrains YouTrack.";
         public override void ValidateConnection()
         {
             if (!string.IsNullOrEmpty(this.UserName))
