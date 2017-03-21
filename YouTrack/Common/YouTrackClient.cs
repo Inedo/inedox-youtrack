@@ -1,9 +1,11 @@
 ﻿using Inedo.Extensions.YouTrack.Credentials;
+using Inedo.IO;
 using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Xml;
 using System.Xml.Linq;
@@ -15,7 +17,7 @@ namespace Inedo.Extensions.YouTrack
 #region Internals
         private readonly YouTrackCredentials credentials;
         private readonly HttpClient client;
-        private readonly Func<Exception, Task> reauthenticate;
+        private readonly Func<Exception, CancellationToken, Task> reauthenticate;
 
         public YouTrackClient(YouTrackCredentials credentials)
         {
@@ -43,35 +45,40 @@ namespace Inedo.Extensions.YouTrack
             return this.credentials.ServerUrl.TrimEnd('/') + path + (query != null ? "?" + await query.ReadAsStringAsync().ConfigureAwait(false) : "");
         }
 
-        private async Task ReauthenticateUserNamePasswordAsync(Exception ex)
+        private async Task<Exception> ErrorAsync(string description, HttpResponseMessage response)
+        {
+            var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+            try
+            {
+                var xdoc = XDocument.Parse(content);
+                if (xdoc.Root.Name == "error" && !xdoc.Root.HasElements)
+                {
+                    content = xdoc.Root.Value;
+                }
+            }
+            catch
+            {
+                // use the full response as the error message
+            }
+            return new InvalidOperationException($"YouTrack {description} returned {(int)response.StatusCode} {response.ReasonPhrase}: {content}");
+        }
+
+        private async Task ReauthenticateUserNamePasswordAsync(Exception ex, CancellationToken cancellationToken)
         {
             using (var response = await this.client.PostAsync(await this.RequestUri("/rest/user/login").ConfigureAwait(false), new FormUrlEncodedContent(new Dictionary<string, string>()
             {
                 { "login", this.credentials.UserName },
                 { "password", this.credentials.Password.ToUnsecureString() },
-            })).ConfigureAwait(false))
+            }), cancellationToken).ConfigureAwait(false))
             {
                 if (response.StatusCode != HttpStatusCode.OK)
                 {
-                    var error = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                    try
-                    {
-                        var xdoc = XDocument.Parse(error);
-                        if (xdoc.Root.Name == "error" && !xdoc.Root.HasElements)
-                        {
-                            error = xdoc.Root.Value;
-                        }
-                    }
-                    catch
-                    {
-                        // use the full response as the error message
-                    }
-                    throw new InvalidOperationException($"Authentication failed for user {this.credentials.UserName} on YouTrack {this.credentials.ServerUrl}: {error}", ex);
+                    throw await this.ErrorAsync($"authentication attempt for user {this.credentials.UserName} on {this.credentials.ServerUrl}", response).ConfigureAwait(false);
                 }
             }
         }
 
-        private Task ReauthenticateErrorAsync(Exception ex)
+        private Task ReauthenticateErrorAsync(Exception ex, CancellationToken cancellationToken)
         {
             if (this.credentials.PermanentToken?.Length > 0)
             {
@@ -85,86 +92,81 @@ namespace Inedo.Extensions.YouTrack
             this.client.Dispose();
         }
 
-        private async Task<XDocument> GetAsync(string path, HttpContent query = null)
+        private async Task<HttpResponseMessage> GetAsync(string path, HttpContent query = null, CancellationToken cancellationToken = default(CancellationToken))
         {
-            return await this.AttemptAsync(path, query, async uri => await this.client.GetAsync(uri).ConfigureAwait(false)).ConfigureAwait(false);
+            return await this.AttemptAsync(path, query, async uri => await this.client.GetAsync(uri, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
         }
 
-        private async Task<XDocument> DeleteAsync(string path, HttpContent query = null)
+        private async Task<HttpResponseMessage> DeleteAsync(string path, HttpContent query = null, CancellationToken cancellationToken = default(CancellationToken))
         {
-            return await this.AttemptAsync(path, query, async uri => await this.client.DeleteAsync(uri).ConfigureAwait(false)).ConfigureAwait(false);
+            return await this.AttemptAsync(path, query, async uri => await this.client.DeleteAsync(uri, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
         }
 
-        private async Task<XDocument> PostAsync(string path, HttpContent query = null, HttpContent body = null)
+        private async Task<HttpResponseMessage> PostAsync(string path, HttpContent query = null, HttpContent body = null, CancellationToken cancellationToken = default(CancellationToken))
         {
-            return await this.AttemptAsync(path, query, async uri => await this.client.PostAsync(uri, body).ConfigureAwait(false)).ConfigureAwait(false);
+            return await this.AttemptAsync(path, query, async uri => await this.client.PostAsync(uri, body, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
         }
 
-        private async Task<XDocument> PutAsync(string path, HttpContent query = null, HttpContent body = null)
+        private async Task<HttpResponseMessage> PutAsync(string path, HttpContent query = null, HttpContent body = null, CancellationToken cancellationToken = default(CancellationToken))
         {
-            return await this.AttemptAsync(path, query, async uri => await this.client.PutAsync(uri, body).ConfigureAwait(false)).ConfigureAwait(false);
+            return await this.AttemptAsync(path, query, async uri => await this.client.PutAsync(uri, body, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
         }
 
-        private async Task<XDocument> AttemptAsync(string path, HttpContent query, Func<string, Task<HttpResponseMessage>> request)
+        private async Task<HttpResponseMessage> AttemptAsync(string path, HttpContent query, Func<string, Task<HttpResponseMessage>> request, CancellationToken cancellationToken = default(CancellationToken))
         {
             var uri = await this.RequestUri(path, query).ConfigureAwait(false);
 
-            Exception ex = null;
-
-            using (var response = await request(uri).ConfigureAwait(false))
+            var response = await request(uri).ConfigureAwait(false);
+            if (response.StatusCode != HttpStatusCode.Forbidden)
+            {
+                return response;
+            }
+            Exception ex;
+            using (response)
             {
                 var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
                 try
                 {
                     var xdoc = XDocument.Parse(content);
-                    if (response.StatusCode != HttpStatusCode.Forbidden)
-                    {
-                        return xdoc;
-                    }
 
                     if (xdoc.Root.Name == "error" && !xdoc.Root.HasElements)
                     {
-                        ex = new Exception($"YouTrack request failed: {path} returned {xdoc.Root.Value}");
+                        ex = new InvalidOperationException($"YouTrack request failed: {path} returned {xdoc.Root.Value}");
                     }
                     else
                     {
-                        ex = new Exception($"YouTrack request failed: {path} returned {content}");
+                        ex = new InvalidOperationException($"YouTrack request failed: {path} returned {content}");
                     }
                 }
                 catch (XmlException)
                 {
-                    throw new InvalidOperationException($"YouTrack request failed: {path} returned {(int)response.StatusCode} {response.ReasonPhrase}: {content}");
+                    ex = new InvalidOperationException($"YouTrack request failed: {path} returned {content}");
                 }
             }
 
-            await this.reauthenticate(ex).ConfigureAwait(false);
+            await this.reauthenticate(ex, cancellationToken).ConfigureAwait(false);
 
-            using (var response = await request(uri).ConfigureAwait(false))
-            {
-                var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                try
-                {
-                    var xdoc = XDocument.Parse(content);
-                    if (response.StatusCode != HttpStatusCode.Forbidden)
-                    {
-                        return xdoc;
-                    }
-
-                    if (xdoc.Root.Name == "error" && !xdoc.Root.HasElements)
-                    {
-                        throw new InvalidOperationException($"YouTrack request failed: {path} returned {xdoc.Root.Value}", ex);
-                    }
-                    else
-                    {
-                        throw new InvalidOperationException($"YouTrack request failed: {path} returned {content}", ex);
-                    }
-                }
-                catch (XmlException)
-                {
-                    throw new InvalidOperationException($"YouTrack request failed: {path} returned {(int)response.StatusCode} {response.ReasonPhrase}: {content}", ex);
-                }
-            }
+            return await request(uri).ConfigureAwait(false);
         }
 #endregion
+
+        public async Task<string> CreateIssueAsync(string project, string summary, string description, CancellationToken cancellationToken = default(CancellationToken))
+        {
+            var query = new Dictionary<string, string>()
+            {
+                { "project", project },
+                { "summary", summary },
+                { "description", description }
+            };
+
+            using (var response = await this.PutAsync("/rest/issue", new FormUrlEncodedContent(query), null, cancellationToken).ConfigureAwait(false))
+            {
+                if (response.StatusCode == HttpStatusCode.Created)
+                {
+                    return PathEx.GetFileName(response.Headers.Location.OriginalString);
+                }
+                throw await this.ErrorAsync("create issue", response).ConfigureAwait(false);
+            }
+        }
     }
 }
