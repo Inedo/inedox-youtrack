@@ -2,6 +2,7 @@
 using Inedo.IO;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -166,6 +167,36 @@ namespace Inedo.Extensions.YouTrack
                     return PathEx.GetFileName(response.Headers.Location.OriginalString);
                 }
                 throw await this.ErrorAsync("create issue", response).ConfigureAwait(false);
+            }
+        }
+
+        public async Task RunCommandAsync(string issueId, string command, CancellationToken cancellationToken = default(CancellationToken))
+        {
+            var body = new Dictionary<string, string>()
+            {
+                { "command", command }
+            };
+
+            using (var response = await this.PostAsync($"/rest/issue/{issueId}/execute", null, new FormUrlEncodedContent(body), cancellationToken))
+            {
+                if (response.StatusCode == HttpStatusCode.OK)
+                {
+                    return;
+                }
+                throw await this.ErrorAsync("run command", response);
+            }
+        }
+
+        public async Task<IEnumerable<string>> ListStatesAsync(CancellationToken cancellationToken = default(CancellationToken))
+        {
+            using (var response = await this.GetAsync("/rest/admin/customfield/stateBundle/States", null, cancellationToken).ConfigureAwait(false))
+            {
+                if (response.StatusCode == HttpStatusCode.OK)
+                {
+                    var xdoc = XDocument.Load(await response.Content.ReadAsStreamAsync().ConfigureAwait(false));
+                    return xdoc.Root.Elements("state").Select(e => e.Value);
+                }
+                throw await this.ErrorAsync("list states", response).ConfigureAwait(false);
             }
         }
     }
