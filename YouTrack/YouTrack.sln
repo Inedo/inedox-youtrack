@@ -11,6 +11,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OtterExtension", "OtterExte
 EndProject
 Global
 	GlobalSection(SharedMSBuildProjectFiles) = preSolution
+		Common\Common.projitems*{5426f9dd-d4ec-47a9-b41d-24aa98485258}*SharedItemsImports = 4
 		Common\Common.projitems*{8ec0f043-f9ae-42ec-84d6-2f4ecae4fdab}*SharedItemsImports = 4
 		Common\Common.projitems*{b8a126fd-8cf0-48aa-a34c-b3e6484c9790}*SharedItemsImports = 13
 	EndGlobalSection
