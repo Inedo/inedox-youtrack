@@ -7,6 +7,7 @@ using Inedo.Otter.Extensibility;
 using Inedo.Otter.Extensibility.Operations;
 using Inedo.Otter.Extensions;
 #endif
+using Inedo.Diagnostics;
 using Inedo.Documentation;
 using System.ComponentModel;
 using System.Threading.Tasks;
@@ -44,9 +45,16 @@ namespace Inedo.Extensions.YouTrack.Operations
 
         public override async Task ExecuteAsync(IOperationExecutionContext context)
         {
+            if (context.Simulation)
+            {
+                this.LogDebug("Simulating; not creating an issue.");
+                this.IssueId = "ABC-123";
+                return;
+            }
+
             using (var client = this.CreateClient())
             {
-                this.IssueId = await client.CreateIssueAsync(this.Project, this.Summary, this.Description).ConfigureAwait(false);
+                this.IssueId = await client.CreateIssueAsync(this.Project, this.Summary, this.Description, context.CancellationToken).ConfigureAwait(false);
             }
         }
 
