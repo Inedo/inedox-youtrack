@@ -9,6 +9,7 @@
     <Import_RootNamespace>Inedo.Extensions.YouTrack</Import_RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)Credentials\YouTrackCredentials.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Properties\AssemblyInfo.cs" />
   </ItemGroup>
 </Project>
