@@ -50,7 +50,7 @@ namespace Inedo.Extensions.YouTrack.Operations
                     this.LogError($"No such issue state: {this.State}");
                 }
 
-                await client.RunCommandAsync(this.IssueId, $"State {this.State}", context.CancellationToken).ConfigureAwait(false);
+                await client.RunCommandAsync(this.IssueId, $"State {this.State}", null, context.CancellationToken).ConfigureAwait(false);
             }
         }
 

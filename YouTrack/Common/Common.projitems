@@ -12,6 +12,7 @@
     <Compile Include="$(MSBuildThisFileDirectory)Credentials\YouTrackCredentials.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Operations\CreateYouTrackIssueOperation.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Operations\ChangeYouTrackIssueStateOperation.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Operations\AddYouTrackCommentOperation.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Operations\YouTrackOperationBase.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Properties\AssemblyInfo.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)SecureStringExtensions.cs" />

@@ -170,12 +170,17 @@ namespace Inedo.Extensions.YouTrack
             }
         }
 
-        public async Task RunCommandAsync(string issueId, string command, CancellationToken cancellationToken = default(CancellationToken))
+        public async Task RunCommandAsync(string issueId, string command, string comment = null, CancellationToken cancellationToken = default(CancellationToken))
         {
             var body = new Dictionary<string, string>()
             {
                 { "command", command }
             };
+
+            if (!string.IsNullOrEmpty(comment))
+            {
+                body["comment"] = comment;
+            }
 
             using (var response = await this.PostAsync($"/rest/issue/{issueId}/execute", null, new FormUrlEncodedContent(body), cancellationToken))
             {
