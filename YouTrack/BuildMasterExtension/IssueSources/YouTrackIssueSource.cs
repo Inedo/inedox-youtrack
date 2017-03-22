@@ -1,4 +1,5 @@
-﻿using Inedo.BuildMaster.Extensibility.Credentials;
+﻿using Inedo.BuildMaster.Extensibility;
+using Inedo.BuildMaster.Extensibility.Credentials;
 using Inedo.BuildMaster.Extensibility.IssueSources;
 using Inedo.BuildMaster.Extensibility.IssueTrackerConnections;
 using Inedo.BuildMaster.Web.Controls;
@@ -29,6 +30,10 @@ namespace Inedo.BuildMasterExtensions.YouTrack.IssueSources
         public string ProjectName { get; set; }
 
         [Persistent]
+        [DisplayName("Fix version")]
+        public string ReleaseNumber { get; set; }
+
+        [Persistent]
         [DisplayName("Search query")]
         public string Filter { get; set; }
 
@@ -36,9 +41,15 @@ namespace Inedo.BuildMasterExtensions.YouTrack.IssueSources
         {
             var credentials = this.TryGetCredentials();
 
+            var filter = this.Filter ?? string.Empty;
+            if (!string.IsNullOrEmpty(this.ReleaseNumber))
+            {
+                filter = $"{filter} Fix version: {{{this.ReleaseNumber}}}";
+            }
+
             using (var client = new YouTrackClient(credentials))
             {
-                return await client.IssuesByProjectAsync(this.ProjectName, this.Filter).ConfigureAwait(false);
+                return await client.IssuesByProjectAsync(this.ProjectName, filter).ConfigureAwait(false);
             }
         }
 
