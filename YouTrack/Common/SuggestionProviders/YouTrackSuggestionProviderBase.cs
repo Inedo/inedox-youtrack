@@ -25,8 +25,8 @@ namespace Inedo.Extensions.YouTrack.SuggestionProviders
             {
                 ServerUrl = AH.CoalesceString(config[nameof(YouTrackOperationBase.ServerUrl)], credentials?.ServerUrl),
                 UserName = AH.CoalesceString(config[nameof(YouTrackOperationBase.UserName)], credentials?.UserName),
-                Password = AH.CoalesceString(config[nameof(YouTrackOperationBase.Password)], credentials?.Password).ToSecureString(),
-                PermanentToken = AH.CoalesceString(config[nameof(YouTrackOperationBase.PermanentToken)], credentials?.PermanentToken).ToSecureString(),
+                Password = AH.CoalesceString(config[nameof(YouTrackOperationBase.Password)], credentials?.Password?.ToUnsecureString()).ToSecureString(),
+                PermanentToken = AH.CoalesceString(config[nameof(YouTrackOperationBase.PermanentToken)], credentials?.PermanentToken?.ToUnsecureString()).ToSecureString(),
             });
         }
     }
