@@ -24,6 +24,7 @@ namespace Inedo.Extensions.YouTrack
         private readonly YouTrackCredentials credentials;
         private readonly HttpClient client;
         private readonly Func<Exception, CancellationToken, Task> reauthenticate;
+        private bool needFirstAuth = false;
 
         public YouTrackClient(YouTrackCredentials credentials)
         {
@@ -38,6 +39,7 @@ namespace Inedo.Extensions.YouTrack
             {
                 this.client = new HttpClient(new HttpClientHandler() { CookieContainer = new CookieContainer() }, true);
                 this.reauthenticate = this.ReauthenticateUserNamePasswordAsync;
+                this.needFirstAuth = true;
             }
             else
             {
@@ -71,11 +73,13 @@ namespace Inedo.Extensions.YouTrack
 
         private async Task ReauthenticateUserNamePasswordAsync(Exception ex, CancellationToken cancellationToken)
         {
-            using (var response = await this.client.PostAsync(await this.RequestUri("/rest/user/login").ConfigureAwait(false), new FormUrlEncodedContent(new Dictionary<string, string>()
+            var body = new Dictionary<string, string>()
             {
                 { "login", this.credentials.UserName },
                 { "password", this.credentials.Password.ToUnsecureString() },
-            }), cancellationToken).ConfigureAwait(false))
+            };
+
+            using (var response = await this.client.PostAsync(await this.RequestUri("/rest/user/login").ConfigureAwait(false), new FormUrlEncodedContent(body), cancellationToken).ConfigureAwait(false))
             {
                 if (response.StatusCode != HttpStatusCode.OK)
                 {
@@ -120,6 +124,12 @@ namespace Inedo.Extensions.YouTrack
 
         private async Task<HttpResponseMessage> AttemptAsync(string path, HttpContent query, Func<string, Task<HttpResponseMessage>> request, CancellationToken cancellationToken = default(CancellationToken))
         {
+            if (this.needFirstAuth)
+            {
+                await this.reauthenticate(null, cancellationToken).ConfigureAwait(false);
+                this.needFirstAuth = false;
+            }
+
             var uri = await this.RequestUri(path, query).ConfigureAwait(false);
 
             var response = await request(uri).ConfigureAwait(false);
@@ -207,6 +217,19 @@ namespace Inedo.Extensions.YouTrack
                     return xdoc.Root.Elements("state").Select(e => e.Value);
                 }
                 throw await this.ErrorAsync("list states", response).ConfigureAwait(false);
+            }
+        }
+
+        public async Task<IEnumerable<string>> ListProjectsAsync(CancellationToken cancellationToken = default(CancellationToken))
+        {
+            using (var response = await this.GetAsync("/rest/project/all", null, cancellationToken).ConfigureAwait(false))
+            {
+                if (response.StatusCode == HttpStatusCode.OK)
+                {
+                    var xdoc = XDocument.Load(await response.Content.ReadAsStreamAsync().ConfigureAwait(false));
+                    return xdoc.Root.Elements("project").Select(e => e.Attribute("shortName").Value);
+                }
+                throw await this.ErrorAsync("list projects", response).ConfigureAwait(false);
             }
         }
 

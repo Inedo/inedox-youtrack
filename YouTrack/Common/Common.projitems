@@ -16,6 +16,9 @@
     <Compile Include="$(MSBuildThisFileDirectory)Operations\YouTrackOperationBase.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Properties\AssemblyInfo.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)SecureStringExtensions.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)SuggestionProviders\YouTrackProjectSuggestionProvider.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)SuggestionProviders\YouTrackStateSuggestionProvider.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)SuggestionProviders\YouTrackSuggestionProviderBase.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)YouTrackClient.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)YouTrackIssue.cs" />
   </ItemGroup>

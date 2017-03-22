@@ -1,9 +1,11 @@
 ﻿using Inedo.BuildMaster.Extensibility.Credentials;
 using Inedo.BuildMaster.Extensibility.IssueSources;
 using Inedo.BuildMaster.Extensibility.IssueTrackerConnections;
+using Inedo.BuildMaster.Web.Controls;
 using Inedo.Documentation;
 using Inedo.Extensions.YouTrack;
 using Inedo.Extensions.YouTrack.Credentials;
+using Inedo.Extensions.YouTrack.SuggestionProviders;
 using Inedo.Serialization;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -21,6 +23,7 @@ namespace Inedo.BuildMasterExtensions.YouTrack.IssueSources
         [Persistent]
         [Required]
         [DisplayName("Project name")]
+        [SuggestibleValue(typeof(YouTrackProjectSuggestionProvider))]
         public string ProjectName { get; set; }
 
         [Persistent]

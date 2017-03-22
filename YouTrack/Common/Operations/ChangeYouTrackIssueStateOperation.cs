@@ -1,12 +1,15 @@
 ﻿#if BuildMaster
 using Inedo.BuildMaster.Extensibility;
 using Inedo.BuildMaster.Extensibility.Operations;
+using Inedo.BuildMaster.Web.Controls;
 #elif Otter
-using Inedo.Otter.Extensibility.Operations;
 using Inedo.Otter.Extensibility;
+using Inedo.Otter.Extensibility.Operations;
+using Inedo.Otter.Web.Controls;
 #endif
 using Inedo.Diagnostics;
 using Inedo.Documentation;
+using Inedo.Extensions.YouTrack.SuggestionProviders;
 using System;
 using System.ComponentModel;
 using System.Linq;
@@ -31,6 +34,7 @@ namespace Inedo.Extensions.YouTrack.Operations
         [Required]
         [DisplayName("State")]
         [ScriptAlias("State")]
+        [SuggestibleValue(typeof(YouTrackStateSuggestionProvider))]
         public string State { get; set; }
 
         public override async Task ExecuteAsync(IOperationExecutionContext context)

@@ -2,13 +2,16 @@
 using Inedo.BuildMaster.Extensibility;
 using Inedo.BuildMaster.Extensibility.Operations;
 using Inedo.BuildMaster.Web;
+using Inedo.BuildMaster.Web.Controls;
 #elif Otter
 using Inedo.Otter.Extensibility;
 using Inedo.Otter.Extensibility.Operations;
 using Inedo.Otter.Extensions;
+using Inedo.Otter.Web.Controls;
 #endif
 using Inedo.Diagnostics;
 using Inedo.Documentation;
+using Inedo.Extensions.YouTrack.SuggestionProviders;
 using System.ComponentModel;
 using System.Threading.Tasks;
 
@@ -26,6 +29,7 @@ namespace Inedo.Extensions.YouTrack.Operations
         [Required]
         [DisplayName("Project")]
         [ScriptAlias("Project")]
+        [SuggestibleValue(typeof(YouTrackProjectSuggestionProvider))]
         public string Project { get; set; }
 
         [Required]
