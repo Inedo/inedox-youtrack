@@ -1,13 +1,11 @@
-﻿using System;
-using System.ComponentModel;
-using System.Linq;
-using Inedo.BuildMaster;
-using Inedo.BuildMaster.Extensibility.Providers;
-using Inedo.BuildMaster.Extensibility.Providers.IssueTracking;
+﻿using Inedo.BuildMaster.Extensibility.Providers.IssueTracking;
 using Inedo.BuildMaster.Web;
 using Inedo.Serialization;
+using System;
+using System.ComponentModel;
+using System.Linq;
 
-namespace Inedo.BuildMasterExtensions.YouTrack
+namespace Inedo.BuildMasterExtensions.YouTrack.Legacy
 {
     [DisplayName("YouTrack")]
     [Description("Issue tracking provider for JetBrains YouTrack.")]

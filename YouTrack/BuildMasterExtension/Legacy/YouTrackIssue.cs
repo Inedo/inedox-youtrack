@@ -1,7 +1,7 @@
-﻿using System;
-using Inedo.BuildMaster.Extensibility.Providers.IssueTracking;
+﻿using Inedo.BuildMaster.Extensibility.Providers.IssueTracking;
+using System;
 
-namespace Inedo.BuildMasterExtensions.YouTrack
+namespace Inedo.BuildMasterExtensions.YouTrack.Legacy
 {
     [Serializable]
     internal sealed class YouTrackIssue : IssueTrackerIssue

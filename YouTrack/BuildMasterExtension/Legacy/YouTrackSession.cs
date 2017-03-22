@@ -1,13 +1,13 @@
-﻿using System;
+﻿using Inedo.BuildMaster.Extensibility.Providers.IssueTracking;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
 using System.Text;
 using System.Xml.Linq;
-using Inedo.BuildMaster.Extensibility.Providers.IssueTracking;
 
-namespace Inedo.BuildMasterExtensions.YouTrack
+namespace Inedo.BuildMasterExtensions.YouTrack.Legacy
 {
     internal sealed class YouTrackSession
     {

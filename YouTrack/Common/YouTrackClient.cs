@@ -209,12 +209,16 @@ namespace Inedo.Extensions.YouTrack
 
         public async Task<IEnumerable<string>> ListStatesAsync(CancellationToken cancellationToken = default(CancellationToken))
         {
-            using (var response = await this.GetAsync("/rest/admin/customfield/stateBundle/States", null, cancellationToken).ConfigureAwait(false))
+            var query = new Dictionary<string, string>()
+            {
+                { "filter", "State: " }
+            };
+            using (var response = await this.GetAsync("/rest/issue/intellisense", new FormUrlEncodedContent(query), cancellationToken).ConfigureAwait(false))
             {
                 if (response.StatusCode == HttpStatusCode.OK)
                 {
                     var xdoc = XDocument.Load(await response.Content.ReadAsStreamAsync().ConfigureAwait(false));
-                    return xdoc.Root.Elements("state").Select(e => e.Value);
+                    return xdoc.Root.Element("suggest").Elements("item").Where(e => e.Element("styleClass")?.Value == "field").Select(e => e.Element("option").Value);
                 }
                 throw await this.ErrorAsync("list states", response).ConfigureAwait(false);
             }

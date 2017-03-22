@@ -1,9 +1,9 @@
-﻿using System.Web.UI.WebControls;
-using Inedo.BuildMaster.Extensibility.Providers;
+﻿using Inedo.BuildMaster.Extensibility.Providers;
 using Inedo.BuildMaster.Web.Controls.Extensions;
 using Inedo.Web.Controls;
+using System.Web.UI.WebControls;
 
-namespace Inedo.BuildMasterExtensions.YouTrack
+namespace Inedo.BuildMasterExtensions.YouTrack.Legacy
 {
     internal sealed class YouTrackIssueTrackingProviderEditor : ProviderEditorBase
     {

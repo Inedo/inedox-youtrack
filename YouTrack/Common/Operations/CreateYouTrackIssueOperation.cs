@@ -18,8 +18,10 @@ using System.Threading.Tasks;
 namespace Inedo.Extensions.YouTrack.Operations
 {
     [DisplayName("Create YouTrack Issue")]
+    [Description("Creates a new issue on YouTrack.")]
     [ScriptAlias("Create-Issue")]
     [ScriptNamespace("YouTrack")]
+    [Tag("youtrack")]
     public sealed class CreateYouTrackIssueOperation : YouTrackOperationBase
     {
         [DisplayName("Credentials")]
@@ -45,6 +47,7 @@ namespace Inedo.Extensions.YouTrack.Operations
         [Output]
         [DisplayName("Issue ID")]
         [ScriptAlias("IssueId")]
+        [PlaceholderText("$IssueID")]
         public string IssueId { get; set; }
 
         public override async Task ExecuteAsync(IOperationExecutionContext context)
@@ -67,7 +70,7 @@ namespace Inedo.Extensions.YouTrack.Operations
             return new ExtendedRichDescription(new RichDescription(
                 "Create YouTrack issue in ", new Hilite(config[nameof(Project)]),
                 ": ", new Hilite(config[nameof(Summary)])
-            ));
+            ), new RichDescription(config[nameof(Description)]));
         }
     }
 }

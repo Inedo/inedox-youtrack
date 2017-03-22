@@ -13,6 +13,8 @@ using System.Threading.Tasks;
 
 namespace Inedo.BuildMasterExtensions.YouTrack.IssueSources
 {
+    [DisplayName("YouTrack Issue Source")]
+    [Description("Issue source for JetBrains YouTrack.")]
     public sealed class YouTrackIssueSource : IssueSource, IHasCredentials<YouTrackCredentials>
     {
         [Persistent]
@@ -43,7 +45,7 @@ namespace Inedo.BuildMasterExtensions.YouTrack.IssueSources
         public override RichDescription GetDescription()
         {
             var credentials = this.TryGetCredentials();
-            return new RichDescription("YouTrack ", new Hilite(this.ProjectName), " in ", new Hilite(credentials?.ToString() ?? "[missing credentials]"));
+            return new RichDescription("YouTrack ", new Hilite(this.ProjectName), " in ", credentials.GetDescription());
         }
     }
 }

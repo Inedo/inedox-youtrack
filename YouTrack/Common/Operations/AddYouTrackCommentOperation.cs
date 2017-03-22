@@ -15,8 +15,10 @@ using System.Threading.Tasks;
 namespace Inedo.Extensions.YouTrack.Operations
 {
     [DisplayName("Add Comment to YouTrack Issue")]
+    [Description("Adds a comment to a YouTrack issue.")]
     [ScriptAlias("Add-Comment")]
     [ScriptNamespace("YouTrack")]
+    [Tag("youtrack")]
     public sealed class AddYouTrackCommentOperation : YouTrackOperationBase
     {
         [DisplayName("Credentials")]
