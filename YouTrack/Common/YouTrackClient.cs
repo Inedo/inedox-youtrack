@@ -1,4 +1,9 @@
-﻿using Inedo.Extensions.YouTrack.Credentials;
+﻿#if BuildMaster
+using Inedo.BuildMaster.Extensibility.IssueTrackerConnections;
+#elif Otter
+using Inedo.OtterExtensions.YouTrack;
+#endif
+using Inedo.Extensions.YouTrack.Credentials;
 using Inedo.IO;
 using System;
 using System.Collections.Generic;
@@ -182,13 +187,13 @@ namespace Inedo.Extensions.YouTrack
                 body["comment"] = comment;
             }
 
-            using (var response = await this.PostAsync($"/rest/issue/{issueId}/execute", null, new FormUrlEncodedContent(body), cancellationToken))
+            using (var response = await this.PostAsync($"/rest/issue/{issueId}/execute", null, new FormUrlEncodedContent(body), cancellationToken).ConfigureAwait(false))
             {
                 if (response.StatusCode == HttpStatusCode.OK)
                 {
                     return;
                 }
-                throw await this.ErrorAsync("run command", response);
+                throw await this.ErrorAsync("run command", response).ConfigureAwait(false);
             }
         }
 
@@ -202,6 +207,29 @@ namespace Inedo.Extensions.YouTrack
                     return xdoc.Root.Elements("state").Select(e => e.Value);
                 }
                 throw await this.ErrorAsync("list states", response).ConfigureAwait(false);
+            }
+        }
+
+        public async Task<IEnumerable<IIssueTrackerIssue>> IssuesByProjectAsync(string projectName, string filter = null, CancellationToken cancellationToken = default(CancellationToken))
+        {
+            var query = new Dictionary<string, string>()
+            {
+                { "max", "1000000" },
+                { "wikifyDescription", "true" }
+            };
+            if (!string.IsNullOrEmpty(filter))
+            {
+                query["filter"] = filter;
+            }
+
+            using (var response = await this.GetAsync($"/rest/issue/byproject/{projectName}", new FormUrlEncodedContent(query), cancellationToken).ConfigureAwait(false))
+            {
+                if (response.StatusCode == HttpStatusCode.OK)
+                {
+                    var xdoc = XDocument.Load(await response.Content.ReadAsStreamAsync().ConfigureAwait(false));
+                    return xdoc.Root.Elements("issue").Select(node => new YouTrackIssue(this.credentials.ServerUrl, node));
+                }
+                throw await this.ErrorAsync("get issues by project", response).ConfigureAwait(false);
             }
         }
     }

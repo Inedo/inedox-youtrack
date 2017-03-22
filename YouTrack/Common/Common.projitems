@@ -17,5 +17,6 @@
     <Compile Include="$(MSBuildThisFileDirectory)Properties\AssemblyInfo.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)SecureStringExtensions.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)YouTrackClient.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)YouTrackIssue.cs" />
   </ItemGroup>
 </Project>

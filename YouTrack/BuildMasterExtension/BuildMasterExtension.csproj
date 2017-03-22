@@ -61,6 +61,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="IssueSources\YouTrackIssueSource.cs" />
     <Compile Include="Legacy\YouTrackIssue.cs" />
     <Compile Include="Legacy\YouTrackIssueTrackingProvider.cs" />
     <Compile Include="Legacy\YouTrackIssueTrackingProviderEditor.cs">
