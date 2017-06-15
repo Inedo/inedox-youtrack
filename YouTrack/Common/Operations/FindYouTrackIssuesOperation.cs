@@ -76,7 +76,7 @@ namespace Inedo.Extensions.YouTrack.Operations
             return new ExtendedRichDescription(
                 new RichDescription(
                     "Find YouTrack issues in ", new Hilite(config[nameof(Project)]),
-                    " to ", new Hilite(config.OutArguments[nameof(Output)].ToString())
+                    " to ", new Hilite(config[nameof(Output)].ToString())
                 ), extended
             );
         }
