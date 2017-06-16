@@ -29,25 +29,26 @@ namespace Inedo.Extensions.YouTrack.Operations
         public override string CredentialName { get; set; }
 
         [Required]
-        [DisplayName("Project name")]
+        [DisplayName("Project ID")]
         [ScriptAlias("Project")]
         [SuggestibleValue(typeof(YouTrackProjectSuggestionProvider))]
         public string Project { get; set; }
 
         [DisplayName("Search filter")]
         [ScriptAlias("Filter")]
+        [Description("The YouTrack issue filter. for example, to get open issues for the release currently in context:<br/><br/><code>Fix version: $ReleaseNumber State: -Completed</code> <br/><br/>" +
+            "For more information on filters, see: <a target=\"_blank\" href=\"https://www.jetbrains.com/help/youtrack/standalone/Issue-Filters.html\">https://www.jetbrains.com/help/youtrack/standalone/Issue-Filters.html</a>")]
         public string Filter { get; set; }
 
         [Output]
-        [Required]
         [DisplayName("Output variable")]
         [ScriptAlias("Output")]
-        [PlaceholderText("@IssueIDs")]
+        [Description("The output variable should be a list variable, for example: @YouTrackIssueIDs")]
         public IEnumerable<string> Output { get; set; }
 
         public override async Task ExecuteAsync(IOperationExecutionContext context)
         {
-            this.LogDebug($"Finding issues in project {this.Project}...");
+            this.LogInformation($"Finding issues in project {this.Project}...");
             if (!string.IsNullOrEmpty(this.Filter))
             {
                 this.LogDebug($"Using filter: {this.Filter}");
@@ -60,7 +61,7 @@ namespace Inedo.Extensions.YouTrack.Operations
                 var ids = issues.Select(i => i.Id).ToList();
                 this.Output = ids;
 
-                this.LogDebug($"Found {ids.Count} issues.");
+                this.LogInformation($"Found {ids.Count} issues.");
             }
         }
 
