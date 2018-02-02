@@ -1,13 +1,7 @@
-﻿#if BuildMaster
-using Inedo.BuildMaster.Extensibility;
-using Inedo.BuildMaster.Extensibility.Credentials;
-using Inedo.BuildMaster.Extensibility.Operations;
-#elif Otter
-using Inedo.Otter.Extensibility;
-using Inedo.Otter.Extensibility.Credentials;
-using Inedo.Otter.Extensibility.Operations;
-#endif
-using Inedo.Documentation;
+﻿using Inedo.Documentation;
+using Inedo.Extensibility;
+using Inedo.Extensibility.Credentials;
+using Inedo.Extensibility.Operations;
 using Inedo.Extensions.YouTrack.Credentials;
 using System.ComponentModel;
 using System.Security;

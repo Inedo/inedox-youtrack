@@ -1,11 +1,4 @@
-﻿#if BuildMaster
-using Inedo.BuildMaster.Extensibility.IssueTrackerConnections;
-#elif Otter
-using Inedo.OtterExtensions.YouTrack;
-#endif
-using Inedo.Extensions.YouTrack.Credentials;
-using Inedo.IO;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -15,6 +8,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Xml;
 using System.Xml.Linq;
+using Inedo.Extensibility.IssueSources;
+using Inedo.Extensions.YouTrack.Credentials;
+using Inedo.IO;
 
 namespace Inedo.Extensions.YouTrack
 {
@@ -32,7 +28,7 @@ namespace Inedo.Extensions.YouTrack
             if (this.credentials.PermanentToken?.Length > 0)
             {
                 this.client = new HttpClient();
-                this.client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", this.credentials.PermanentToken.ToUnsecureString());
+                this.client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AH.Unprotect(this.credentials.PermanentToken));
                 this.reauthenticate = this.ReauthenticateErrorAsync;
             }
             else if (!string.IsNullOrEmpty(this.credentials.UserName))
@@ -76,7 +72,7 @@ namespace Inedo.Extensions.YouTrack
             var body = new Dictionary<string, string>()
             {
                 { "login", this.credentials.UserName },
-                { "password", this.credentials.Password.ToUnsecureString() },
+                { "password", AH.Unprotect(this.credentials.Password) },
             };
 
             using (var response = await this.client.PostAsync(await this.RequestUri("/rest/user/login").ConfigureAwait(false), new FormUrlEncodedContent(body), cancellationToken).ConfigureAwait(false))
@@ -237,7 +233,7 @@ namespace Inedo.Extensions.YouTrack
             }
         }
 
-        public async Task<IEnumerable<IIssueTrackerIssue>> IssuesByProjectAsync(string projectName, string filter = null, CancellationToken cancellationToken = default(CancellationToken))
+        public async Task<IEnumerable<IIssueTrackerIssue>> IssuesByProjectAsync(string projectName, string filter = null, CancellationToken cancellationToken = default)
         {
             var query = new Dictionary<string, string>()
             {

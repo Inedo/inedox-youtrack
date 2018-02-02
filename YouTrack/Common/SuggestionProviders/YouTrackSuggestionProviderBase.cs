@@ -1,16 +1,10 @@
-﻿#if BuildMaster
-using Inedo.BuildMaster.Extensibility;
-using Inedo.BuildMaster.Extensibility.Credentials;
-using Inedo.BuildMaster.Web.Controls;
-#elif Otter
-using Inedo.Otter.Extensibility;
-using Inedo.Otter.Extensibility.Credentials;
-using Inedo.Otter.Web.Controls;
-#endif
+﻿using System.Collections.Generic;
+using System.Threading.Tasks;
+using Inedo.Extensibility;
+using Inedo.Extensibility.Credentials;
 using Inedo.Extensions.YouTrack.Credentials;
 using Inedo.Extensions.YouTrack.Operations;
-using System.Collections.Generic;
-using System.Threading.Tasks;
+using Inedo.Web;
 
 namespace Inedo.Extensions.YouTrack.SuggestionProviders
 {
@@ -21,13 +15,15 @@ namespace Inedo.Extensions.YouTrack.SuggestionProviders
         protected YouTrackClient CreateClient(IComponentConfiguration config)
         {
             var credentials = ResourceCredentials.Create<YouTrackCredentials>(config[nameof(IHasCredentials<YouTrackCredentials>.CredentialName)]);
-            return new YouTrackClient(new YouTrackCredentials()
-            {
-                ServerUrl = AH.CoalesceString(config[nameof(YouTrackOperationBase.ServerUrl)], credentials?.ServerUrl),
-                UserName = AH.CoalesceString(config[nameof(YouTrackOperationBase.UserName)], credentials?.UserName),
-                Password = AH.CoalesceString(config[nameof(YouTrackOperationBase.Password)], credentials?.Password?.ToUnsecureString()).ToSecureString(),
-                PermanentToken = AH.CoalesceString(config[nameof(YouTrackOperationBase.PermanentToken)], credentials?.PermanentToken?.ToUnsecureString()).ToSecureString(),
-            });
+            return new YouTrackClient(
+                new YouTrackCredentials
+                {
+                    ServerUrl = AH.CoalesceString(config[nameof(YouTrackOperationBase.ServerUrl)], credentials?.ServerUrl),
+                    UserName = AH.CoalesceString(config[nameof(YouTrackOperationBase.UserName)], credentials?.UserName),
+                    Password = AH.CreateSecureString(AH.CoalesceString(config[nameof(YouTrackOperationBase.Password)], AH.Unprotect(credentials?.Password))),
+                    PermanentToken = AH.CreateSecureString(AH.CoalesceString(config[nameof(YouTrackOperationBase.PermanentToken)], AH.Unprotect(credentials?.PermanentToken))),
+                }
+            );
         }
     }
 }

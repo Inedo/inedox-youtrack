@@ -1,11 +1,6 @@
-﻿#if BuildMaster
-using Inedo.BuildMaster.Extensibility;
-#elif Otter
-using Inedo.Otter.Extensibility;
-#endif
-using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Threading.Tasks;
+using Inedo.Extensibility;
 
 namespace Inedo.Extensions.YouTrack.SuggestionProviders
 {

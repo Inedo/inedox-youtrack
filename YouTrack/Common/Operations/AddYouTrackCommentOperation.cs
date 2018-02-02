@@ -9,6 +9,9 @@ using Inedo.Otter.Extensions;
 #endif
 using Inedo.Diagnostics;
 using Inedo.Documentation;
+using Inedo.Extensibility;
+using Inedo.Extensibility.Operations;
+using Inedo.Web;
 using System.ComponentModel;
 using System.Threading.Tasks;
 

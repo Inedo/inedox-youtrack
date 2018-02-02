@@ -1,9 +1,9 @@
-﻿using Inedo.BuildMaster.Extensibility.Providers.IssueTracking;
-using Inedo.BuildMaster.Web;
-using Inedo.Serialization;
-using System;
+﻿using System;
 using System.ComponentModel;
 using System.Linq;
+using Inedo.BuildMaster.Extensibility.Providers.IssueTracking;
+using Inedo.Serialization;
+using Inedo.Web;
 
 namespace Inedo.BuildMasterExtensions.YouTrack.Legacy
 {

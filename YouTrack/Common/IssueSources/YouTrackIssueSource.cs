@@ -1,21 +1,20 @@
-﻿using Inedo.BuildMaster.Extensibility;
-using Inedo.BuildMaster.Extensibility.Credentials;
-using Inedo.BuildMaster.Extensibility.IssueSources;
-using Inedo.BuildMaster.Extensibility.IssueTrackerConnections;
-using Inedo.BuildMaster.Web.Controls;
+﻿using System.Collections.Generic;
+using System.ComponentModel;
+using System.Threading.Tasks;
 using Inedo.Documentation;
+using Inedo.Extensibility.Credentials;
+using Inedo.Extensibility.IssueSources;
 using Inedo.Extensions.YouTrack;
 using Inedo.Extensions.YouTrack.Credentials;
 using Inedo.Extensions.YouTrack.SuggestionProviders;
 using Inedo.Serialization;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Threading.Tasks;
+using Inedo.Web;
 
-namespace Inedo.BuildMasterExtensions.YouTrack.IssueSources
+namespace Inedo.Extensions.YouTrack.IssueSources
 {
     [DisplayName("YouTrack Issue Source")]
     [Description("Issue source for JetBrains YouTrack.")]
+    [PersistFrom("Inedo.BuildMasterExtensions.YouTrack.IssueSources.YouTrackIssueSource,YouTrack")]
     public sealed class YouTrackIssueSource : IssueSource, IHasCredentials<YouTrackCredentials>
     {
         [Persistent]
@@ -26,7 +25,7 @@ namespace Inedo.BuildMasterExtensions.YouTrack.IssueSources
         [Persistent]
         [Required]
         [DisplayName("Project name")]
-        [SuggestibleValue(typeof(YouTrackProjectSuggestionProvider))]
+        [SuggestableValue(typeof(YouTrackProjectSuggestionProvider))]
         public string ProjectName { get; set; }
 
         [Persistent]

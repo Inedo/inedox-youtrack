@@ -1,11 +1,7 @@
-﻿#if BuildMaster
-using Inedo.BuildMaster.Extensibility.IssueTrackerConnections;
-#elif Otter
-using Inedo.OtterExtensions.YouTrack;
-#endif
-using System;
+﻿using System;
 using System.Linq;
 using System.Xml.Linq;
+using Inedo.Extensibility.IssueSources;
 
 namespace Inedo.Extensions.YouTrack
 {
