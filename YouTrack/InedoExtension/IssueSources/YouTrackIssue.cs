@@ -3,7 +3,7 @@ using System.Linq;
 using System.Xml.Linq;
 using Inedo.Extensibility.IssueSources;
 
-namespace Inedo.Extensions.YouTrack
+namespace Inedo.Extensions.YouTrack.IssueSources
 {
     public sealed class YouTrackIssue : IIssueTrackerIssue
     {

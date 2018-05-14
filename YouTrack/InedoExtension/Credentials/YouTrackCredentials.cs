@@ -1,10 +1,10 @@
-﻿using Inedo.Documentation;
+﻿using System.ComponentModel;
+using System.Security;
+using Inedo.Documentation;
 using Inedo.Extensibility;
 using Inedo.Extensibility.Credentials;
 using Inedo.Serialization;
 using Inedo.Web;
-using System.ComponentModel;
-using System.Security;
 
 namespace Inedo.Extensions.YouTrack.Credentials
 {

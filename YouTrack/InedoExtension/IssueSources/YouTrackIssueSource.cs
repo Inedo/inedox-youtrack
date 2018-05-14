@@ -4,7 +4,6 @@ using System.Threading.Tasks;
 using Inedo.Documentation;
 using Inedo.Extensibility.Credentials;
 using Inedo.Extensibility.IssueSources;
-using Inedo.Extensions.YouTrack;
 using Inedo.Extensions.YouTrack.Credentials;
 using Inedo.Extensions.YouTrack.SuggestionProviders;
 using Inedo.Serialization;

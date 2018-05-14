@@ -10,6 +10,7 @@ using System.Xml;
 using System.Xml.Linq;
 using Inedo.Extensibility.IssueSources;
 using Inedo.Extensions.YouTrack.Credentials;
+using Inedo.Extensions.YouTrack.IssueSources;
 using Inedo.IO;
 
 namespace Inedo.Extensions.YouTrack
@@ -233,7 +234,7 @@ namespace Inedo.Extensions.YouTrack
             }
         }
 
-        public async Task<IEnumerable<IIssueTrackerIssue>> IssuesByProjectAsync(string projectName, string filter = null, CancellationToken cancellationToken = default)
+        public async Task<IEnumerable<IIssueTrackerIssue>> IssuesByProjectAsync(string projectName, string filter = null, CancellationToken cancellationToken = default(CancellationToken))
         {
             var query = new Dictionary<string, string>()
             {
