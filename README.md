@@ -1,6 +1,6 @@
 # inedox-youtrack
 
-[![Build status](https://ci.appveyor.com/api/projects/status/0a4n2xacrfm6u3cc/branch/master?svg=true)](https://ci.appveyor.com/project/Inedo/inedox-youtrack/branch/master)
+[![Build status](https://buildmaster.inedo.com/api/ci-badges/image?API_Key=badges&$ApplicationId=12)](https://buildmaster.inedo.com/api/ci-badges/link?API_Key=badges&$ApplicationId=12)
 
 Contains an issue tracking source for JetBrains YouTrack.
 
