@@ -54,7 +54,7 @@ namespace Inedo.Extensions.YouTrack.IssueSources
         public override RichDescription GetDescription()
         {
             var credentials = this.TryGetCredentials();
-            return new RichDescription("YouTrack ", new Hilite(this.ProjectName), " in ", credentials.GetDescription());
+            return new RichDescription("YouTrack ", new Hilite(this.ProjectName), " in ", credentials?.GetDescription() ?? "(unknown)");
         }
     }
 }
