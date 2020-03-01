@@ -8,7 +8,6 @@ namespace Inedo.Extensions.YouTrack.Credentials
 {
     [DisplayName("YouTrack Permanent Token")]
     [Description("Provides secure access to YouTrack.")]
-    [PersistFrom("Inedo.Extensions.YouTrack.Credentials.YouTrackCredentials,YouTrack")]
     public sealed class YouTrackTokenCredentials : SecureCredentials
     {
         [Persistent(Encrypted = true)]

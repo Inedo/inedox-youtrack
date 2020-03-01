@@ -6,6 +6,8 @@ using UsernamePasswordCredentials = Inedo.Extensions.Credentials.UsernamePasswor
 
 namespace Inedo.Extensions.YouTrack.Credentials
 {
+    [DisplayName("YouTrack Instance")]
+    [Description("Connect to an instance of YouTrack.")]
     public sealed class YouTrackSecureResource : SecureResource<YouTrackTokenCredentials, UsernamePasswordCredentials>
     {
         [Required]
