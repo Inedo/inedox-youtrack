@@ -4,35 +4,80 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Security;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml;
 using System.Xml.Linq;
+using Inedo.Extensibility.Credentials;
 using Inedo.Extensibility.IssueSources;
+using Inedo.Extensibility.SecureResources;
+using Inedo.Extensions.Credentials;
 using Inedo.Extensions.YouTrack.Credentials;
 using Inedo.Extensions.YouTrack.IssueSources;
+using Inedo.Extensions.YouTrack.Operations;
 using Inedo.IO;
+using UsernamePasswordCredentials = Inedo.Extensions.Credentials.UsernamePasswordCredentials;
 
 namespace Inedo.Extensions.YouTrack
 {
-    public sealed class YouTrackClient : IDisposable
+    internal sealed class YouTrackClient : IDisposable
     {
 #region Internals
-        private readonly YouTrackCredentials credentials;
         private readonly HttpClient client;
         private readonly Func<Exception, CancellationToken, Task> reauthenticate;
         private bool needFirstAuth = false;
+        private readonly SecureString permanentToken;
+        private readonly string userName;
+        private readonly SecureString password;
+        private readonly string serverUrl;
 
-        public YouTrackClient(YouTrackCredentials credentials)
+        public YouTrackClient(YouTrackOperationBase operation, ICredentialResolutionContext context)
+            : this(operation, null, context) { }
+        public YouTrackClient(string resourceName, ICredentialResolutionContext context)
+            : this(null, resourceName, context) { }
+
+        private YouTrackClient(YouTrackOperationBase operation, string resourceName, ICredentialResolutionContext context)
         {
-            this.credentials = credentials;
-            if (this.credentials.PermanentToken?.Length > 0)
+            resourceName = resourceName ?? operation?.ResourceName;
+
+            YouTrackSecureResource resource = null;
+            SecureCredentials credentials = null;
+            if (!string.IsNullOrEmpty(resourceName))
+            {
+                resource = SecureResource.TryCreate(resourceName, context) as YouTrackSecureResource;
+                credentials = resource?.GetCredentials(context);
+                if (resource == null)
+                {
+                    var resCred = ResourceCredentials.TryCreate<LegacyYouTrackResourceCredentials>(resourceName);
+                    resource = (YouTrackSecureResource)resCred?.ToSecureResource();
+                    credentials = resCred?.ToSecureCredentials();
+                }
+
+                if (resource == null)
+                    throw new InvalidOperationException($"The resource \"{resourceName}\" was not found.");
+            }
+            if (!string.IsNullOrEmpty(operation?.CredentialName))
+            {
+                credentials = SecureCredentials.Create(operation.CredentialName, context);
+            }
+
+            this.serverUrl = AH.CoalesceString(operation?.ServerUrl, resource?.ServerUrl);
+            if (string.IsNullOrEmpty(this.serverUrl))
+                throw new InvalidOperationException("ServerUrl is not set.");
+
+            this.userName = AH.CoalesceString(operation?.UserName, (credentials as UsernamePasswordCredentials)?.UserName);
+            this.password = operation?.PermanentToken?.Length > 0 ? operation.PermanentToken : (credentials as UsernamePasswordCredentials)?.Password;
+            this.permanentToken = operation?.PermanentToken?.Length > 0 ? operation.PermanentToken : (credentials as YouTrackTokenCredentials)?.PermanentToken;
+            
+
+            if (this.permanentToken?.Length > 0)
             {
                 this.client = new HttpClient();
-                this.client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AH.Unprotect(this.credentials.PermanentToken));
+                this.client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AH.Unprotect(this.permanentToken));
                 this.reauthenticate = this.ReauthenticateErrorAsync;
             }
-            else if (!string.IsNullOrEmpty(this.credentials.UserName))
+            else if (!string.IsNullOrEmpty(this.userName))
             {
                 this.client = new HttpClient(new HttpClientHandler() { CookieContainer = new CookieContainer() }, true);
                 this.reauthenticate = this.ReauthenticateUserNamePasswordAsync;
@@ -47,7 +92,7 @@ namespace Inedo.Extensions.YouTrack
 
         private async Task<string> RequestUri(string path, HttpContent query = null)
         {
-            return this.credentials.ServerUrl.TrimEnd('/') + path + (query != null ? "?" + await query.ReadAsStringAsync().ConfigureAwait(false) : "");
+            return this.serverUrl.TrimEnd('/') + path + (query != null ? "?" + await query.ReadAsStringAsync().ConfigureAwait(false) : "");
         }
 
         private async Task<Exception> ErrorAsync(string description, HttpResponseMessage response)
@@ -72,26 +117,26 @@ namespace Inedo.Extensions.YouTrack
         {
             var body = new Dictionary<string, string>()
             {
-                { "login", this.credentials.UserName },
-                { "password", AH.Unprotect(this.credentials.Password) },
+                { "login", this.userName },
+                { "password", AH.Unprotect(this.password) },
             };
 
             using (var response = await this.client.PostAsync(await this.RequestUri("/rest/user/login").ConfigureAwait(false), new FormUrlEncodedContent(body), cancellationToken).ConfigureAwait(false))
             {
                 if (response.StatusCode != HttpStatusCode.OK)
                 {
-                    throw await this.ErrorAsync($"authentication attempt for user {this.credentials.UserName} on {this.credentials.ServerUrl}", response).ConfigureAwait(false);
+                    throw await this.ErrorAsync($"authentication attempt for user {this.userName} on {this.serverUrl}", response).ConfigureAwait(false);
                 }
             }
         }
 
         private Task ReauthenticateErrorAsync(Exception ex, CancellationToken cancellationToken)
         {
-            if (this.credentials.PermanentToken?.Length > 0)
+            if (this.permanentToken?.Length > 0)
             {
-                throw new InvalidOperationException($"Authentication failed for permanent token on YouTrack {this.credentials.ServerUrl}", ex);
+                throw new InvalidOperationException($"Authentication failed for permanent token on YouTrack {this.serverUrl}", ex);
             }
-            throw new InvalidOperationException($"Authentication failed for anonymous user on YouTrack {this.credentials.ServerUrl}", ex);
+            throw new InvalidOperationException($"Authentication failed for anonymous user on YouTrack {this.serverUrl}", ex);
         }
 
         public void Dispose()
@@ -251,7 +296,7 @@ namespace Inedo.Extensions.YouTrack
                 if (response.StatusCode == HttpStatusCode.OK)
                 {
                     var xdoc = XDocument.Load(await response.Content.ReadAsStreamAsync().ConfigureAwait(false));
-                    return xdoc.Root.Elements("issue").Select(node => new YouTrackIssue(this.credentials.ServerUrl, node));
+                    return xdoc.Root.Elements("issue").Select(node => new YouTrackIssue(this.serverUrl, node));
                 }
                 throw await this.ErrorAsync("get issues by project", response).ConfigureAwait(false);
             }

@@ -3,15 +3,19 @@ using System.Security;
 using Inedo.Documentation;
 using Inedo.Extensibility;
 using Inedo.Extensibility.Credentials;
+using Inedo.Extensibility.SecureResources;
+using Inedo.Extensions.Credentials;
 using Inedo.Serialization;
 using Inedo.Web;
+using UsernamePasswordCredentials = Inedo.Extensions.Credentials.UsernamePasswordCredentials;
 
 namespace Inedo.Extensions.YouTrack.Credentials
 {
     [ScriptAlias("YouTrack")]
     [DisplayName("YouTrack")]
-    [Description("Credentials for JetBrains YouTrack.")]
-    public sealed class YouTrackCredentials : ResourceCredentials
+    [Description("(Legacy) Credentials for JetBrains YouTrack.")]
+    [PersistFrom("Inedo.Extensions.YouTrack.Credentials.YouTrackCredentials,YouTrack")]
+    public sealed class LegacyYouTrackResourceCredentials : ResourceCredentials
     {
         [Required]
         [Persistent]
@@ -46,6 +50,18 @@ namespace Inedo.Extensions.YouTrack.Credentials
                 return new RichDescription(this.UserName, " @ ", this.ServerUrl);
             }
             return new RichDescription("[Anonymous] @ ", this.ServerUrl);
+        }
+
+        public override SecureResource ToSecureResource() => new YouTrackSecureResource { ServerUrl = this.ServerUrl };
+
+        public override SecureCredentials ToSecureCredentials()
+        {
+            if (this.PermanentToken?.Length > 0)
+                return new YouTrackTokenCredentials { PermanentToken = this.PermanentToken };
+            else if (this.UserName != null)
+                return new UsernamePasswordCredentials { UserName = this.UserName, Password = this.Password };
+            else
+                return null;
         }
     }
 }

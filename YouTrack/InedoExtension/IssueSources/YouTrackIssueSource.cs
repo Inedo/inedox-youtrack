@@ -14,13 +14,8 @@ namespace Inedo.Extensions.YouTrack.IssueSources
     [DisplayName("YouTrack Issue Source")]
     [Description("Issue source for JetBrains YouTrack.")]
     [PersistFrom("Inedo.BuildMasterExtensions.YouTrack.IssueSources.YouTrackIssueSource,YouTrack")]
-    public sealed class YouTrackIssueSource : IssueSource, IHasCredentials<YouTrackCredentials>
+    public sealed class YouTrackIssueSource : IssueSource<YouTrackSecureResource>, IMissingPersistentPropertyHandler
     {
-        [Persistent]
-        [Required]
-        [DisplayName("Credentials")]
-        public string CredentialName { get; set; }
-
         [Persistent]
         [Required]
         [DisplayName("Project name")]
@@ -28,33 +23,27 @@ namespace Inedo.Extensions.YouTrack.IssueSources
         public string ProjectName { get; set; }
 
         [Persistent]
-        [DisplayName("Fix version")]
-        public string ReleaseNumber { get; set; }
-
-        [Persistent]
         [DisplayName("Search query")]
+        [PlaceholderText("Fix version: $ReleaseNumber")]
         public string Filter { get; set; }
 
+        void IMissingPersistentPropertyHandler.OnDeserializedMissingProperties(IReadOnlyDictionary<string, string> missingProperties)
+        {
+            if (string.IsNullOrEmpty(this.ResourceName) && missingProperties.TryGetValue("CredentialName", out var credName))
+                this.ResourceName = credName;
+            if (missingProperties.TryGetValue("ReleaseNumber", out var relNum))
+                this.Filter = $"{this.Filter} Fix version: {{{relNum}}}";
+
+        }
         public override async Task<IEnumerable<IIssueTrackerIssue>> EnumerateIssuesAsync(IIssueSourceEnumerationContext context)
         {
-            var credentials = this.TryGetCredentials();
-
-            var filter = this.Filter ?? string.Empty;
-            if (!string.IsNullOrEmpty(this.ReleaseNumber))
-            {
-                filter = $"{filter} Fix version: {{{this.ReleaseNumber}}}";
-            }
-
-            using (var client = new YouTrackClient(credentials))
+            var filter = AH.CoalesceString(this.Filter, "Fix version: $ReleaseNumber");
+            using (var client = new YouTrackClient(this.ResourceName, new CredentialResolutionContext(context.ProjectId, null)))
             {
                 return await client.IssuesByProjectAsync(this.ProjectName, filter).ConfigureAwait(false);
             }
         }
 
-        public override RichDescription GetDescription()
-        {
-            var credentials = this.TryGetCredentials();
-            return new RichDescription("YouTrack ", new Hilite(this.ProjectName), " in ", credentials.GetDescription());
-        }
+        public override RichDescription GetDescription() => new RichDescription("YouTrack ", new Hilite(this.ProjectName), " in ", this.ResourceName);
     }
 }
