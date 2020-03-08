@@ -12,4 +12,4 @@ using Inedo.Extensibility;
 [assembly: CLSCompliant(false)]
 [assembly: ComVisible(false)]
 
-[assembly: AppliesTo(InedoProduct.BuildMaster)]
+[assembly:AppliesTo(InedoProduct.BuildMaster | InedoProduct.Otter)]

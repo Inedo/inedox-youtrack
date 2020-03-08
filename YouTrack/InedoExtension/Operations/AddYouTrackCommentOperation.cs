@@ -15,10 +15,6 @@ namespace Inedo.Extensions.YouTrack.Operations
     [Tag("youtrack")]
     public sealed class AddYouTrackCommentOperation : YouTrackOperationBase
     {
-        [DisplayName("Credentials")]
-        [ScriptAlias("Credentials")]
-        public override string CredentialName { get; set; }
-
         [Required]
         [DisplayName("Issue ID")]
         [ScriptAlias("IssueId")]
@@ -38,7 +34,7 @@ namespace Inedo.Extensions.YouTrack.Operations
                 return;
             }
 
-            using (var client = this.CreateClient())
+            using (var client = this.CreateClient(context))
             {
                 await client.RunCommandAsync(this.IssueId, "comment", this.Comment, context.CancellationToken).ConfigureAwait(false);
             }

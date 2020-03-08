@@ -18,10 +18,6 @@ namespace Inedo.Extensions.YouTrack.Operations
     [Tag("youtrack")]
     public sealed class ChangeYouTrackIssueStateOperation : YouTrackOperationBase
     {
-        [DisplayName("Credentials")]
-        [ScriptAlias("Credentials")]
-        public override string CredentialName { get; set; }
-
         [Required]
         [DisplayName("Issue ID")]
         [ScriptAlias("IssueId")]
@@ -41,7 +37,7 @@ namespace Inedo.Extensions.YouTrack.Operations
                 return;
             }
 
-            using (var client = this.CreateClient())
+            using (var client = this.CreateClient(context))
             {
                 // sanity check to make sure we're not running an arbitrary command
                 var states = await client.ListStatesAsync(context.CancellationToken).ConfigureAwait(false);

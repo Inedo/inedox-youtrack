@@ -18,10 +18,6 @@ namespace Inedo.Extensions.YouTrack.Operations
     [Tag("youtrack")]
     public sealed class FindYouTrackIssuesOperation : YouTrackOperationBase
     {
-        [DisplayName("Credentials")]
-        [ScriptAlias("Credentials")]
-        public override string CredentialName { get; set; }
-
         [Required]
         [DisplayName("Project ID")]
         [ScriptAlias("Project")]
@@ -48,7 +44,7 @@ namespace Inedo.Extensions.YouTrack.Operations
                 this.LogDebug($"Using filter: {this.Filter}");
             }
 
-            using (var client = this.CreateClient())
+            using (var client = this.CreateClient(context))
             {
                 var issues = await client.IssuesByProjectAsync(this.Project, this.Filter, context.CancellationToken).ConfigureAwait(false);
 
