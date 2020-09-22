@@ -57,6 +57,7 @@ namespace Inedo.Extensions.YouTrack
                 if (resource == null)
                     throw new InvalidOperationException($"The resource \"{resourceName}\" was not found.");
             }
+
             if (!string.IsNullOrEmpty(operation?.CredentialName))
             {
                 credentials = SecureCredentials.Create(operation.CredentialName, context);
@@ -69,7 +70,6 @@ namespace Inedo.Extensions.YouTrack
             this.userName = AH.CoalesceString(operation?.UserName, (credentials as UsernamePasswordCredentials)?.UserName);
             this.password = operation?.PermanentToken?.Length > 0 ? operation.PermanentToken : (credentials as UsernamePasswordCredentials)?.Password;
             this.permanentToken = operation?.PermanentToken?.Length > 0 ? operation.PermanentToken : (credentials as YouTrackTokenCredentials)?.PermanentToken;
-            
 
             if (this.permanentToken?.Length > 0)
             {

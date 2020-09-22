@@ -22,10 +22,10 @@ namespace Inedo.Extensions.YouTrack.IssueSources
         [SuggestableValue(typeof(YouTrackProjectSuggestionProvider))]
         public string ProjectName { get; set; }
 
+        [Required]
         [Persistent]
         [DisplayName("Search query")]
-        [PlaceholderText("Fix version: $ReleaseNumber")]
-        public string Filter { get; set; }
+        public string Filter { get; set; } = "Fix version: $ReleaseNumber";
 
         void IMissingPersistentPropertyHandler.OnDeserializedMissingProperties(IReadOnlyDictionary<string, string> missingProperties)
         {
@@ -37,11 +37,8 @@ namespace Inedo.Extensions.YouTrack.IssueSources
         }
         public override async Task<IEnumerable<IIssueTrackerIssue>> EnumerateIssuesAsync(IIssueSourceEnumerationContext context)
         {
-            var filter = AH.CoalesceString(this.Filter, "Fix version: $ReleaseNumber");
-            using (var client = new YouTrackClient(this.ResourceName, new CredentialResolutionContext(context.ProjectId, null)))
-            {
-                return await client.IssuesByProjectAsync(this.ProjectName, filter).ConfigureAwait(false);
-            }
+            using var client = new YouTrackClient(this.ResourceName, new CredentialResolutionContext(context.ProjectId, null));
+            return await client.IssuesByProjectAsync(this.ProjectName, this.Filter).ConfigureAwait(false);
         }
 
         public override RichDescription GetDescription() => new RichDescription("YouTrack ", new Hilite(this.ProjectName), " in ", this.ResourceName);
