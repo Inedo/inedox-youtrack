@@ -301,5 +301,20 @@ namespace Inedo.Extensions.YouTrack
                 throw await this.ErrorAsync("get issues by project", response).ConfigureAwait(false);
             }
         }
+
+        public async Task ReleaseVersionAsync(string projectName, string version, bool release, bool archive, CancellationToken cancellationToken = default)
+        {
+            var query = new Dictionary<string, string>
+            {
+                { "released", release ? "true" : "false" },
+                { "archived", archive ? "true" : "false" }
+            };
+
+            using var response = await this.PostAsync($"/rest/admin/customfield/versionBundle/{Uri.EscapeDataString(projectName)}`%3A`%20Versions/{Uri.EscapeDataString(version)}", new FormUrlEncodedContent(query), null, cancellationToken).ConfigureAwait(false);
+            if (response.StatusCode == HttpStatusCode.OK)
+                return;
+
+            throw await this.ErrorAsync("release version", response).ConfigureAwait(false);
+        }
     }
 }
