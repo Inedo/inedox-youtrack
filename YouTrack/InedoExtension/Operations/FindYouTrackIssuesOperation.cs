@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Inedo.Diagnostics;
 using Inedo.Documentation;
+using Inedo.ExecutionEngine;
 using Inedo.Extensibility;
 using Inedo.Extensibility.Operations;
 using Inedo.Extensions.YouTrack.SuggestionProviders;
@@ -12,7 +13,7 @@ using Inedo.Web;
 namespace Inedo.Extensions.YouTrack.Operations
 {
     [DisplayName("Find YouTrack Issues")]
-    [Description("Queries YouTrack issue IDs.")]
+    [Description("Queries YouTrack for issues.")]
     [ScriptAlias("Find-Issues")]
     [ScriptNamespace("YouTrack")]
     [Tag("youtrack")]
@@ -33,26 +34,45 @@ namespace Inedo.Extensions.YouTrack.Operations
         [Output]
         [DisplayName("Output variable")]
         [ScriptAlias("Output")]
-        [Description("The output variable should be a list variable, for example: @YouTrackIssueIDs")]
-        public IEnumerable<string> Output { get; set; }
+        [Description("The output variable should be a list variable. For example: @YouTrackIssueIDs")]
+        public RuntimeValue Output { get; set; }
+
+        [Category("Advanced")]
+        [DisplayName("Include details in output")]
+        [ScriptAlias("IncludeDetails")]
+        [Description("When true, the output variable is a list of maps with id, title, and description properties. When false, the output variable is a list of id strings.")]
+        public bool IncludeDetails { get; set; }
 
         public override async Task ExecuteAsync(IOperationExecutionContext context)
         {
             this.LogInformation($"Finding issues in project {this.Project}...");
             if (!string.IsNullOrEmpty(this.Filter))
-            {
                 this.LogDebug($"Using filter: {this.Filter}");
-            }
 
-            using (var client = this.CreateClient(context))
+            using var client = this.CreateClient(context);
+            var issues = (await client.IssuesByProjectAsync(this.Project, this.Filter, context.CancellationToken)).ToList();
+
+            if (this.IncludeDetails)
             {
-                var issues = await client.IssuesByProjectAsync(this.Project, this.Filter, context.CancellationToken).ConfigureAwait(false);
-
-                var ids = issues.Select(i => i.Id).ToList();
-                this.Output = ids;
-
-                this.LogInformation($"Found {ids.Count} issues.");
+                this.Output = new RuntimeValue(
+                    issues.Select(
+                        i => new RuntimeValue(
+                            new Dictionary<string, RuntimeValue>
+                            {
+                                ["id"] = i.Id,
+                                ["title"] = i.Title ?? string.Empty,
+                                ["description"] = i.Description ?? string.Empty
+                            }
+                        )
+                    ).ToList()
+                );
             }
+            else
+            {
+                this.Output = new RuntimeValue(issues.Select(i => new RuntimeValue(i.Id)).ToList());
+            }
+
+            this.LogInformation($"Found {issues.Count} issues.");
         }
 
         protected override ExtendedRichDescription GetDescription(IOperationConfiguration config)
@@ -60,9 +80,7 @@ namespace Inedo.Extensions.YouTrack.Operations
             var extended = new RichDescription();
 
             if (!string.IsNullOrEmpty(config[nameof(Filter)]))
-            {
                 extended.AppendContent("filtering by ", new Hilite(config[nameof(Filter)]));
-            }
 
             return new ExtendedRichDescription(
                 new RichDescription(
