@@ -1,320 +1,364 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net;
-using System.Net.Http;
-using System.Net.Http.Headers;
-using System.Security;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Xml;
-using System.Xml.Linq;
-using Inedo.Extensibility.Credentials;
-using Inedo.Extensibility.IssueSources;
-using Inedo.Extensibility.SecureResources;
-using Inedo.Extensions.Credentials;
-using Inedo.Extensions.YouTrack.Credentials;
-using Inedo.Extensions.YouTrack.IssueSources;
-using Inedo.Extensions.YouTrack.Operations;
-using Inedo.IO;
-using UsernamePasswordCredentials = Inedo.Extensions.Credentials.UsernamePasswordCredentials;
+using Inedo.Diagnostics;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace Inedo.Extensions.YouTrack
 {
-    internal sealed class YouTrackClient : IDisposable
+    internal sealed class YouTrackClient : ILogSink
     {
-#region Internals
-        private readonly HttpClient client;
-        private readonly Func<Exception, CancellationToken, Task> reauthenticate;
-        private bool needFirstAuth = false;
-        private readonly SecureString permanentToken;
-        private readonly string userName;
-        private readonly SecureString password;
-        private readonly string serverUrl;
+        private readonly ILogSink log;
 
-        public YouTrackClient(YouTrackOperationBase operation, ICredentialResolutionContext context)
-            : this(operation, null, context) { }
-        public YouTrackClient(string resourceName, ICredentialResolutionContext context)
-            : this(null, resourceName, context) { }
-
-        private YouTrackClient(YouTrackOperationBase operation, string resourceName, ICredentialResolutionContext context)
+        public YouTrackClient(string token, string apiUrl, ILogSink log = null)
         {
-            resourceName = resourceName ?? operation?.ResourceName;
+            this.log = log;
+            this.Token = token;
+            this.ApiUrl = MakeUrlCanonical(apiUrl);
+        }
 
-            YouTrackSecureResource resource = null;
-            SecureCredentials credentials = null;
-            if (!string.IsNullOrEmpty(resourceName))
+        public string Token { get; }
+        public string ApiUrl { get; }
+
+        public async Task<IReadOnlyCollection<YouTrackProject>> GetProjectsAsync(CancellationToken cancellationToken = default)
+        {
+            var tokens = await this.GetPaginatedListAsync("admin/projects?fields=id,name,shortName", cancellationToken).ConfigureAwait(false);
+            var projects = new List<YouTrackProject>(tokens.Count);
+
+            foreach (var obj in tokens.OfType<JObject>())
             {
-                resource = SecureResource.TryCreate(resourceName, context) as YouTrackSecureResource;
-                credentials = resource?.GetCredentials(context);
-                if (resource == null)
+                var id = (string)obj.Property("id");
+                if (!string.IsNullOrWhiteSpace(id))
                 {
-                    var resCred = ResourceCredentials.TryCreate<LegacyYouTrackResourceCredentials>(resourceName);
-                    resource = (YouTrackSecureResource)resCred?.ToSecureResource();
-                    credentials = resCred?.ToSecureCredentials();
+                    var name = (string)obj.Property("name");
+                    var shortName = (string)obj.Property("shortName");
+                    projects.Add(new YouTrackProject(id, name, shortName));
+                }
+            }
+
+            this.LogDebug($"Query returned {projects.Count} projects.");
+            return projects;
+        }
+        public async Task<string> CreateIssueAsync(string projectName, string summary, string description, CancellationToken cancellationToken = default)
+        {
+            this.LogDebug("Fetching list of projects...");
+            var project = (await this.GetProjectsAsync(cancellationToken).ConfigureAwait(false))
+                .FirstOrDefault(p => p.Name == projectName || p.ShortName == projectName);
+
+            if (project == null)
+                throw new YouTrackException($"Project {projectName} not found in YouTrack.");
+
+            this.LogDebug($"Project {projectName} found: ID={project.Id}, ShortName={project.ShortName}");
+
+            var request = this.CreateRequest("issues?fields=idReadable");
+            request.ContentType = "application/json";
+            request.Method = "POST";
+
+            using (var writer = new JsonTextWriter(new StreamWriter(await request.GetRequestStreamAsync().ConfigureAwait(false), InedoLib.UTF8Encoding)))
+            {
+                writer.WriteStartObject();
+
+                writer.WritePropertyName("project");
+                writer.WriteStartObject();
+                writer.WritePropertyName("id");
+                writer.WriteValue(project.Id);
+                writer.WriteEndObject();
+
+                writer.WritePropertyName("summary");
+                writer.WriteValue(summary);
+
+                writer.WritePropertyName("description");
+                writer.WriteValue(description);
+
+                writer.WriteEndObject();
+            }
+
+            using var response = await GetResponseAsync(request, cancellationToken).ConfigureAwait(false);
+            using var reader = new JsonTextReader(new StreamReader(response.GetResponseStream(), Encoding.UTF8));
+            var obj = JObject.Load(reader);
+
+            var id = (string)obj.Property("idReadable");
+            this.LogInformation($"Created issue {id}.");
+            return id;
+        }
+        public async Task<IReadOnlyCollection<YouTrackIssue>> GetIssuesAsync(string projectName = null, string customQuery = null, string statusField = null, string typeField = null, CancellationToken cancellationToken = default)
+        {
+            var query = new StringBuilder();
+            if (!string.IsNullOrWhiteSpace(projectName))
+            {
+                query.Append("project: {");
+                query.Append(projectName);
+                query.Append('}');
+            }
+
+            if (!string.IsNullOrWhiteSpace(customQuery))
+            {
+                if (query.Length > 0)
+                    query.Append(' ');
+
+                query.Append(customQuery);
+            }
+
+            try
+            {
+                var tokens = await this.GetPaginatedListAsync("issues?fields=id,idReadable,summary,description,reporter(fullName),created,resolved,customFields(name,value(name))&query=" + Uri.EscapeDataString(query.ToString()), cancellationToken).ConfigureAwait(false);
+                var issues = new List<YouTrackIssue>(tokens.Count);
+
+                var baseUrl = this.ApiUrl.TrimEnd('/');
+                baseUrl = baseUrl.Substring(0, baseUrl.LastIndexOf('/')) + "/issue/";
+
+                foreach (var obj in tokens.OfType<JObject>())
+                {
+                    var id = (string)obj.Property("idReadable");
+                    if (!string.IsNullOrWhiteSpace(id))
+                    {
+                        string status = null;
+                        if (!string.IsNullOrWhiteSpace(statusField))
+                            status = ReadCustomFieldValue(obj, statusField);
+
+                        string type = null;
+                        if (!string.IsNullOrWhiteSpace(typeField))
+                            type = ReadCustomFieldValue(obj, typeField);
+
+                        issues.Add(new YouTrackIssue(id, obj, baseUrl + id, status, type));
+                    }
                 }
 
-                if (resource == null)
-                    throw new InvalidOperationException($"The resource \"{resourceName}\" was not found.");
+                return issues;
+            }
+            catch (YouTrackException ex) when (ex.ErrorCode == 400 && ex.Error == "invalid_query")
+            {
+                // YouTrack returns an invalid query error if you try to query for a Fix version that is not defined in YouTrack.
+                // Returning an empty list in the event of any invalid query error is not optimal, but probably better than spamming the event log with errors.
+                // Ideally, YouTrack would add some way to query that won't raise this as an error, or at least return an easily identifiable error code.
+                return InedoLib.EmptyArray<YouTrackIssue>();
+            }
+        }
+        public async Task RunCommandAsync(string command, IEnumerable<string> issueIds, string comment = null, CancellationToken cancellationToken = default)
+        {
+            var idList = issueIds as IReadOnlyCollection<string> ?? issueIds.ToList();
+            if (idList.Count == 0)
+                return;
+
+            var request = this.CreateRequest("commands");
+            request.ContentType = "application/json";
+            request.Method = "POST";
+
+            using (var writer = new JsonTextWriter(new StreamWriter(await request.GetRequestStreamAsync().ConfigureAwait(false), InedoLib.UTF8Encoding)))
+            {
+                writer.WriteStartObject();
+
+                writer.WritePropertyName("query");
+                writer.WriteValue(command);
+
+                if (!string.IsNullOrWhiteSpace(comment))
+                {
+                    writer.WritePropertyName("comment");
+                    writer.WriteValue(comment);
+                }
+
+                writer.WritePropertyName("issues");
+                writer.WriteStartArray();
+                foreach (var i in idList)
+                {
+                    writer.WriteStartObject();
+                    writer.WritePropertyName("idReadable");
+                    writer.WriteValue(i);
+                    writer.WriteEndObject();
+                }
+
+                writer.WriteEndArray();
+
+                writer.WriteEndObject();
             }
 
-            if (!string.IsNullOrEmpty(operation?.CredentialName))
-            {
-                credentials = SecureCredentials.Create(operation.CredentialName, context);
-            }
+            using var response = await GetResponseAsync(request, cancellationToken).ConfigureAwait(false);
 
-            this.serverUrl = AH.CoalesceString(operation?.ServerUrl, resource?.ServerUrl);
-            if (string.IsNullOrEmpty(this.serverUrl))
-                throw new InvalidOperationException("ServerUrl is not set.");
+            using var reader = new StreamReader(response.GetResponseStream(), Encoding.UTF8);
+            var rubbish = reader.ReadToEnd();
+        }
+        public async Task EnsureVersionAsync(string versionField, string projectName, string version, bool? released, bool? archived, CancellationToken cancellationToken)
+        {
+            this.LogDebug("Fetching list of projects...");
+            var project = (await this.GetProjectsAsync(cancellationToken).ConfigureAwait(false))
+                .FirstOrDefault(p => p.Name == projectName || p.ShortName == projectName);
 
-            this.userName = AH.CoalesceString(operation?.UserName, (credentials as UsernamePasswordCredentials)?.UserName);
-            this.password = operation?.PermanentToken?.Length > 0 ? operation.PermanentToken : (credentials as UsernamePasswordCredentials)?.Password;
-            this.permanentToken = operation?.PermanentToken?.Length > 0 ? operation.PermanentToken : (credentials as YouTrackTokenCredentials)?.PermanentToken;
+            if (project == null)
+                throw new YouTrackException($"Project {projectName} not found in YouTrack.");
 
-            if (this.permanentToken?.Length > 0)
+            this.LogDebug($"Project {projectName} found: ID={project.Id}, ShortName={project.ShortName}");
+
+            this.LogDebug("Fetching list of custom fields...");
+            var customField = (await this.GetPaginatedListAsync($"admin/projects/{project.Id}/customFields?fields=id,field(name)", cancellationToken).ConfigureAwait(false))
+                .OfType<JObject>()
+                .FirstOrDefault(f => (string)(f.Property("field")?.Value as JObject)?.Property("name") == versionField);
+
+            var customFieldId = (string)customField?.Property("id");
+            if (string.IsNullOrEmpty(customFieldId))
+                throw new YouTrackException($"YouTrack custom field {versionField} not found in project {projectName}.");
+
+            this.LogDebug($"Custom field {versionField} found: ID={customFieldId}");
+
+            this.LogDebug("Fetching custom field values...");
+            var customFieldUrl = $"admin/projects/{project.Id}/customFields/{customFieldId}/bundle/values?fields=id,name,released,archived";
+            var data = (await this.GetPaginatedListAsync(customFieldUrl, default).ConfigureAwait(false))
+                .OfType<JObject>()
+                .FirstOrDefault(f => (string)f.Property("name") == version);
+
+            bool update = false;
+
+            if (data == null)
             {
-                this.client = new HttpClient();
-                this.client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", AH.Unprotect(this.permanentToken));
-                this.reauthenticate = this.ReauthenticateErrorAsync;
-            }
-            else if (!string.IsNullOrEmpty(this.userName))
-            {
-                this.client = new HttpClient(new HttpClientHandler() { CookieContainer = new CookieContainer() }, true);
-                this.reauthenticate = this.ReauthenticateUserNamePasswordAsync;
-                this.needFirstAuth = true;
+                this.LogDebug($"Custom field value {version} does not already exist.");
+
+                data = new JObject(
+                    new JProperty("name", version),
+                    new JProperty("released", released ?? false),
+                    new JProperty("archived", archived ?? false),
+                    new JProperty("type", "$VersionBundleElement")
+                );
+
+                update = true;
             }
             else
             {
-                this.client = new HttpClient();
-                this.reauthenticate = this.ReauthenticateErrorAsync;
+                this.LogDebug($"Custom field value {version} already exists.");
+
+                if ((bool)data.Property("released") != released || (bool)data.Property("archived") != archived)
+                {
+                    if (released.HasValue)
+                    {
+                        this.LogDebug($"Setting released to {released} (current value is {data["released"]})...");
+                        data["released"] = released.GetValueOrDefault();
+                        update = true;
+                    }
+
+                    if (archived.HasValue)
+                    {
+                        this.LogDebug($"Setting archived to {archived} (current value is {data["archived"]})...");
+                        data["archived"] = archived.GetValueOrDefault();
+                        update = true;
+                    }
+                }
+            }
+
+            if (update)
+            {
+                this.LogDebug($"Creating/updating version {version}...");
+
+                var request = this.CreateRequest($"admin/projects/{project.Id}/customFields/{customFieldId}/bundle/values/{(string)data.Property("id")}");
+                request.ContentType = "application/json";
+                request.Method = "POST";
+
+                using (var writer = new JsonTextWriter(new StreamWriter(await request.GetRequestStreamAsync().ConfigureAwait(false), InedoLib.UTF8Encoding)))
+                {
+                    data.WriteTo(writer);
+                }
+
+                using var response = await GetResponseAsync(request, cancellationToken).ConfigureAwait(false);
+
+                this.LogInformation($"Version {version} update complete.");
+            }
+            else
+            {
+                this.LogInformation($"Custom field value {version} already exists and no update is needed.");
             }
         }
+        public void Log(IMessage message) => this.log?.Log(message);
 
-        private async Task<string> RequestUri(string path, HttpContent query = null)
+        private async Task<IReadOnlyCollection<JToken>> GetPaginatedListAsync(string relativeUrl, CancellationToken cancellationToken)
         {
-            return this.serverUrl.TrimEnd('/') + path + (query != null ? "?" + await query.ReadAsStringAsync().ConfigureAwait(false) : "");
+            const int pageSize = 40;
+
+            var requestUrl = relativeUrl + (relativeUrl.IndexOf('?') >= 0 ? "&" : "?");
+
+            var results = new List<JToken>();
+
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var request = this.CreateRequest(requestUrl + $"$skip={results.Count}&$top={pageSize}");
+
+                using var response = await GetResponseAsync(request, cancellationToken).ConfigureAwait(false);
+                using var reader = new JsonTextReader(new StreamReader(response.GetResponseStream(), Encoding.UTF8));
+
+                var array = JArray.Load(reader);
+                if (array.Count > 0)
+                    results.AddRange(array);
+
+                if (array.Count < pageSize)
+                    return results;
+            }
         }
-
-        private async Task<Exception> ErrorAsync(string description, HttpResponseMessage response)
+        private HttpWebRequest CreateRequest(string relativeUrl)
         {
-            var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+            var request = WebRequest.CreateHttp(this.ApiUrl + relativeUrl);
+            if (!string.IsNullOrWhiteSpace(this.Token))
+                request.Headers.Add("Authorization", "Bearer " + this.Token);
+
+            request.Accept = "application/json";
+            request.AutomaticDecompression = DecompressionMethods.GZip;
+            request.UserAgent = $"{SDK.ProductName}/{SDK.ProductVersion} (YouTrack/{typeof(YouTrackClient).Assembly.GetName().Version})";
+            this.LogDebug($"Making request to {request.RequestUri}...");
+            return request;
+        }
+        private static string ReadCustomFieldValue(JObject obj, string customFieldName)
+        {
+            if (obj.Property("customFields")?.Value is not JArray fields)
+                return null;
+
+            var match = fields.OfType<JObject>().FirstOrDefault(f => (string)f.Property("name") == customFieldName);
+            if (match == null)
+                return null;
+
+            return match.Property("value")?.Value is JObject valueObj ? (string)valueObj.Property("name") : null;
+        }
+        private static async Task<WebResponse> GetResponseAsync(HttpWebRequest request, CancellationToken cancellationToken)
+        {
+            using var reg = cancellationToken.Register(() => request.Abort());
             try
             {
-                var xdoc = XDocument.Parse(content);
-                if (xdoc.Root.Name == "error" && !xdoc.Root.HasElements)
+                return await request.GetResponseAsync().ConfigureAwait(false);
+            }
+            catch (WebException ex) when (ex.Response is HttpWebResponse response)
+            {
+                if (response.ContentType?.StartsWith("application/json") == true)
                 {
-                    content = xdoc.Root.Value;
+                    using var reader = new JsonTextReader(new StreamReader(response.GetResponseStream(), Encoding.UTF8));
+                    var obj = JObject.Load(reader);
+                    throw new YouTrackException((int)response.StatusCode, obj);
                 }
-            }
-            catch
-            {
-                // use the full response as the error message
-            }
-            return new InvalidOperationException($"YouTrack {description} returned {(int)response.StatusCode} {response.ReasonPhrase}: {content}");
-        }
-
-        private async Task ReauthenticateUserNamePasswordAsync(Exception ex, CancellationToken cancellationToken)
-        {
-            var body = new Dictionary<string, string>()
-            {
-                { "login", this.userName },
-                { "password", AH.Unprotect(this.password) },
-            };
-
-            using (var response = await this.client.PostAsync(await this.RequestUri("/rest/user/login").ConfigureAwait(false), new FormUrlEncodedContent(body), cancellationToken).ConfigureAwait(false))
-            {
-                if (response.StatusCode != HttpStatusCode.OK)
+                else
                 {
-                    throw await this.ErrorAsync($"authentication attempt for user {this.userName} on {this.serverUrl}", response).ConfigureAwait(false);
-                }
-            }
-        }
-
-        private Task ReauthenticateErrorAsync(Exception ex, CancellationToken cancellationToken)
-        {
-            if (this.permanentToken?.Length > 0)
-            {
-                throw new InvalidOperationException($"Authentication failed for permanent token on YouTrack {this.serverUrl}", ex);
-            }
-            throw new InvalidOperationException($"Authentication failed for anonymous user on YouTrack {this.serverUrl}", ex);
-        }
-
-        public void Dispose()
-        {
-            this.client.Dispose();
-        }
-
-        private async Task<HttpResponseMessage> GetAsync(string path, HttpContent query = null, CancellationToken cancellationToken = default(CancellationToken))
-        {
-            return await this.AttemptAsync(path, query, async uri => await this.client.GetAsync(uri, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
-        }
-
-        private async Task<HttpResponseMessage> DeleteAsync(string path, HttpContent query = null, CancellationToken cancellationToken = default(CancellationToken))
-        {
-            return await this.AttemptAsync(path, query, async uri => await this.client.DeleteAsync(uri, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
-        }
-
-        private async Task<HttpResponseMessage> PostAsync(string path, HttpContent query = null, HttpContent body = null, CancellationToken cancellationToken = default(CancellationToken))
-        {
-            return await this.AttemptAsync(path, query, async uri => await this.client.PostAsync(uri, body, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
-        }
-
-        private async Task<HttpResponseMessage> PutAsync(string path, HttpContent query = null, HttpContent body = null, CancellationToken cancellationToken = default(CancellationToken))
-        {
-            return await this.AttemptAsync(path, query, async uri => await this.client.PutAsync(uri, body, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
-        }
-
-        private async Task<HttpResponseMessage> AttemptAsync(string path, HttpContent query, Func<string, Task<HttpResponseMessage>> request, CancellationToken cancellationToken = default(CancellationToken))
-        {
-            if (this.needFirstAuth)
-            {
-                await this.reauthenticate(null, cancellationToken).ConfigureAwait(false);
-                this.needFirstAuth = false;
-            }
-
-            var uri = await this.RequestUri(path, query).ConfigureAwait(false);
-
-            var response = await request(uri).ConfigureAwait(false);
-            if (response.StatusCode != HttpStatusCode.Forbidden)
-            {
-                return response;
-            }
-            Exception ex;
-            using (response)
-            {
-                var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                try
-                {
-                    var xdoc = XDocument.Parse(content);
-
-                    if (xdoc.Root.Name == "error" && !xdoc.Root.HasElements)
-                    {
-                        ex = new InvalidOperationException($"YouTrack request failed: {path} returned {xdoc.Root.Value}");
-                    }
+                    using var reader = new StreamReader(response.GetResponseStream(), Encoding.UTF8);
+                    var buffer = new char[8192];
+                    int count = reader.ReadBlock(buffer, 0, buffer.Length);
+                    if (count > 0)
+                        throw new YouTrackException((int)response.StatusCode, new string(buffer, 0, count));
                     else
-                    {
-                        ex = new InvalidOperationException($"YouTrack request failed: {path} returned {content}");
-                    }
+                        throw new YouTrackException((int)response.StatusCode, response.StatusDescription);
                 }
-                catch (XmlException)
-                {
-                    ex = new InvalidOperationException($"YouTrack request failed: {path} returned {content}");
-                }
-            }
-
-            await this.reauthenticate(ex, cancellationToken).ConfigureAwait(false);
-
-            return await request(uri).ConfigureAwait(false);
-        }
-#endregion
-
-        public async Task<string> CreateIssueAsync(string project, string summary, string description, CancellationToken cancellationToken = default(CancellationToken))
-        {
-            var query = new Dictionary<string, string>()
-            {
-                { "project", project },
-                { "summary", summary },
-                { "description", description }
-            };
-
-            using (var response = await this.PutAsync("/rest/issue", new FormUrlEncodedContent(query), null, cancellationToken).ConfigureAwait(false))
-            {
-                if (response.StatusCode == HttpStatusCode.Created)
-                {
-                    return PathEx.GetFileName(response.Headers.Location.OriginalString);
-                }
-                throw await this.ErrorAsync("create issue", response).ConfigureAwait(false);
             }
         }
-
-        public async Task RunCommandAsync(string issueId, string command, string comment = null, CancellationToken cancellationToken = default(CancellationToken))
+        private static string MakeUrlCanonical(string apiUrl)
         {
-            var body = new Dictionary<string, string>()
-            {
-                { "command", command }
-            };
+            if (string.IsNullOrWhiteSpace(apiUrl))
+                throw new ArgumentNullException(nameof(apiUrl));
 
-            if (!string.IsNullOrEmpty(comment))
-            {
-                body["comment"] = comment;
-            }
+            if (apiUrl.EndsWith("/api/"))
+                return apiUrl;
 
-            using (var response = await this.PostAsync($"/rest/issue/{issueId}/execute", null, new FormUrlEncodedContent(body), cancellationToken).ConfigureAwait(false))
-            {
-                if (response.StatusCode == HttpStatusCode.OK)
-                {
-                    return;
-                }
-                throw await this.ErrorAsync("run command", response).ConfigureAwait(false);
-            }
-        }
+            if (apiUrl.EndsWith("/api"))
+                return apiUrl + "/";
 
-        public async Task<IEnumerable<string>> ListStatesAsync(CancellationToken cancellationToken = default(CancellationToken))
-        {
-            var query = new Dictionary<string, string>()
-            {
-                { "filter", "State: " }
-            };
-            using (var response = await this.GetAsync("/rest/issue/intellisense", new FormUrlEncodedContent(query), cancellationToken).ConfigureAwait(false))
-            {
-                if (response.StatusCode == HttpStatusCode.OK)
-                {
-                    var xdoc = XDocument.Load(await response.Content.ReadAsStreamAsync().ConfigureAwait(false));
-                    return xdoc.Root.Element("suggest").Elements("item").Where(e => e.Element("styleClass")?.Value == "field").Select(e => e.Element("option").Value);
-                }
-                throw await this.ErrorAsync("list states", response).ConfigureAwait(false);
-            }
-        }
-
-        public async Task<IEnumerable<string>> ListProjectsAsync(CancellationToken cancellationToken = default(CancellationToken))
-        {
-            using (var response = await this.GetAsync("/rest/project/all", null, cancellationToken).ConfigureAwait(false))
-            {
-                if (response.StatusCode == HttpStatusCode.OK)
-                {
-                    var xdoc = XDocument.Load(await response.Content.ReadAsStreamAsync().ConfigureAwait(false));
-                    return xdoc.Root.Elements("project").Select(e => e.Attribute("shortName").Value);
-                }
-                throw await this.ErrorAsync("list projects", response).ConfigureAwait(false);
-            }
-        }
-
-        public async Task<IEnumerable<IIssueTrackerIssue>> IssuesByProjectAsync(string projectName, string filter = null, CancellationToken cancellationToken = default(CancellationToken))
-        {
-            var query = new Dictionary<string, string>()
-            {
-                { "max", "1000000" },
-                { "wikifyDescription", "true" }
-            };
-            if (!string.IsNullOrEmpty(filter))
-            {
-                query["filter"] = filter;
-            }
-
-            using (var response = await this.GetAsync($"/rest/issue/byproject/{projectName}", new FormUrlEncodedContent(query), cancellationToken).ConfigureAwait(false))
-            {
-                if (response.StatusCode == HttpStatusCode.OK)
-                {
-                    var xdoc = XDocument.Load(await response.Content.ReadAsStreamAsync().ConfigureAwait(false));
-                    return xdoc.Root.Elements("issue").Select(node => new YouTrackIssue(this.serverUrl, node));
-                }
-                throw await this.ErrorAsync("get issues by project", response).ConfigureAwait(false);
-            }
-        }
-
-        public async Task ReleaseVersionAsync(string projectName, string version, bool release, bool archive, CancellationToken cancellationToken = default)
-        {
-            var query = new Dictionary<string, string>
-            {
-                { "released", release ? "true" : "false" },
-                { "archived", archive ? "true" : "false" }
-            };
-
-            using var response = await this.PostAsync($"/rest/admin/customfield/versionBundle/{Uri.EscapeDataString(projectName)}`%3A`%20Versions/{Uri.EscapeDataString(version)}", new FormUrlEncodedContent(query), null, cancellationToken).ConfigureAwait(false);
-            if (response.StatusCode == HttpStatusCode.OK)
-                return;
-
-            throw await this.ErrorAsync("release version", response).ConfigureAwait(false);
+            return apiUrl.TrimEnd('/') + "/api/";
         }
     }
 }

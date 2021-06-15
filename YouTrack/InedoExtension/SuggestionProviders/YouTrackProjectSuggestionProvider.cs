@@ -1,17 +1,56 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Inedo.Extensibility;
+using Inedo.Extensibility.Credentials;
+using Inedo.Extensibility.SecureResources;
+using Inedo.Extensions.YouTrack.Credentials;
+using Inedo.Extensions.YouTrack.IssueSources;
+using Inedo.Web;
 
 namespace Inedo.Extensions.YouTrack.SuggestionProviders
 {
-    public sealed class YouTrackProjectSuggestionProvider : YouTrackSuggestionProviderBase
+    public sealed class YouTrackProjectSuggestionProvider : ISuggestionProvider
     {
-        public override async Task<IEnumerable<string>> GetSuggestionsAsync(IComponentConfiguration config)
+        public async Task<IEnumerable<string>> GetSuggestionsAsync(IComponentConfiguration config)
         {
-            using (var client = this.CreateClient(config))
+            var client = this.CreateClient(config);
+            return (await client.GetProjectsAsync().ConfigureAwait(false))
+                .OrderBy(p => p.Name)
+                .Select(p => p.Name);
+        }
+
+        private YouTrackClient CreateClient(IComponentConfiguration config)
+        {
+            var resourceName = config[nameof(YouTrackIssueSource.ResourceName)];
+            if (string.IsNullOrEmpty(resourceName))
+                return null;
+
+            var credentialContext = config.EditorContext as ICredentialResolutionContext ?? CredentialResolutionContext.None;
+            string token = null;
+            YouTrackSecureResource resource = null;
+            if (!string.IsNullOrEmpty(resourceName))
             {
-                return await client.ListProjectsAsync().ConfigureAwait(false);
+                resource = SecureResource.TryCreate(resourceName, credentialContext) as YouTrackSecureResource;
+                var credentials = resource?.GetCredentials(credentialContext);
+                if (resource == null)
+                {
+                    var resCred = ResourceCredentials.TryCreate<LegacyYouTrackResourceCredentials>(resourceName);
+                    resource = (YouTrackSecureResource)resCred?.ToSecureResource();
+                    credentials = resCred?.ToSecureCredentials();
+                }
+
+                if (resource == null)
+                    throw new InvalidOperationException($"The resource \"{resourceName}\" was not found.");
+
+                if (credentials is not YouTrackTokenCredentials tokenCredentials)
+                    throw new InvalidOperationException($"The resource \"{resourceName}\" does not refer to YouTrack token credentials.");
+
+                token = AH.Unprotect(tokenCredentials.PermanentToken);
             }
+
+            return new YouTrackClient(token, resource.ServerUrl);
         }
     }
 }

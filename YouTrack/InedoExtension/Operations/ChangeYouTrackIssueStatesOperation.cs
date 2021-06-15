@@ -6,38 +6,47 @@ using Inedo.Diagnostics;
 using Inedo.Documentation;
 using Inedo.Extensibility;
 using Inedo.Extensibility.Operations;
-using Inedo.Web;
 
 namespace Inedo.Extensions.YouTrack.Operations
 {
-    [Tag("youtrack")]
-    [ScriptAlias("Add-Comment")]
     [ScriptNamespace("YouTrack")]
-    [DisplayName("Add Comment to YouTrack Issue")]
-    [Description("Adds a comment to a YouTrack issue.")]
-    [Example(@"# Add a comment to issues in the current release of the current project.
-YouTrack::Add-Comment
+    [ScriptAlias("Change-IssueStates")]
+    [ScriptAlias("Change-Issue-State", Obsolete = true)]
+    [DisplayName("Change YouTrack Issue States")]
+    [Description("Changes the state of YouTrack issues.")]
+    [Example(@"# Change the state of all issues in the application's project with 'Fix version' = $ReleaseNumber to Completed.
+YouTrack::ChangeIssueStates
 (
     Query: Project: {$ApplicationName} Fix version: $ReleaseNumber,
-    Comment: Comment added by BuildMaster in build $BuildNumber of release $ReleaseNumber of $ApplicationName.
+    State: Completed
 );")]
-    public sealed class AddYouTrackCommentOperation : YouTrackOperationBase
+    public sealed class ChangeYouTrackIssueStatesOperation : YouTrackOperationBase
     {
         [ScriptAlias("Query")]
         [Description("The YouTrack issue query. For example, to get open issues for the release currently in context:<br/><br/><code>Project: {$ApplicationName} Fix version: $ReleaseNumber State: -Completed</code> <br/><br/>" +
             "For more information on filters, see: <a target=\"_blank\" href=\"https://www.jetbrains.com/help/youtrack/standalone/Search-and-Command-Attributes.html\">https://www.jetbrains.com/help/youtrack/standalone/Search-and-Command-Attributes.html</a>")]
         public string Query { get; set; }
+
         [Category("Advanced")]
+        [DisplayName("Issue IDs")]
         [ScriptAlias("Issues")]
         [ScriptAlias("IssueId", Obsolete = true)]
-        [DisplayName("Issue IDs")]
         [Description("Apply to the issue IDs directly. When this value is specified, \"Query\" is ignored.")]
         public IEnumerable<string> IssueIds { get; set; }
 
         [Required]
+        [ScriptAlias("State")]
+        public string State { get; set; }
+
         [ScriptAlias("Comment")]
-        [FieldEditMode(FieldEditMode.Multiline)]
+        [PlaceholderText("none")]
         public string Comment { get; set; }
+
+        [Category("Advanced")]
+        [ScriptAlias("IssueStatusFieldName")]
+        [DefaultValue("$YouTrackStatusFieldName")]
+        [DisplayName("Issue status custom field")]
+        public string IssueStatusFieldName { get; set; } = "$YouTrackStatusFieldName";
 
         private protected override async Task ExecuteAsync(IOperationExecutionContext context, YouTrackClient client)
         {
@@ -47,11 +56,11 @@ YouTrack::Add-Comment
                 return;
             }
 
-            this.LogInformation($"Adding comment \"{this.Comment}\" to issues...");
+            this.LogInformation($"Changinge state on issues to {this.State}...");
 
             if (context.Simulation)
             {
-                this.LogDebug("Simulating; not creating a comment.");
+                this.LogDebug("Simulating; not changing issue states.");
                 return;
             }
 
@@ -59,14 +68,14 @@ YouTrack::Add-Comment
             if (ids == null)
             {
                 this.LogDebug("Querying YouTrack: " + this.Query);
-                ids = (await client.GetIssuesAsync(customQuery: this.Query, cancellationToken: context.CancellationToken))
+                ids = (await client.GetIssuesAsync(customQuery: this.Query, statusField: this.IssueStatusFieldName, cancellationToken: context.CancellationToken))
                     .Select(i => i.ReadableId)
                     .ToList();
             }
 
-            this.LogDebug("Adding comment to: " + string.Join(", ", ids));
-            await client.RunCommandAsync("comment", ids, this.Comment, context.CancellationToken);
-            this.LogInformation("Comment added.");
+            this.LogDebug("Changing state on: " + string.Join(", ", ids));
+            await client.RunCommandAsync($"{this.IssueStatusFieldName} {this.State}", ids, this.Comment, context.CancellationToken);
+            this.LogInformation("State change applied.");
         }
 
         protected override ExtendedRichDescription GetDescription(IOperationConfiguration config)
@@ -78,22 +87,22 @@ YouTrack::Add-Comment
             if (ids != null && ids.Count > 0)
             {
                 desc2 = new RichDescription(
-                    "to issues ",
+                    "for issues ",
                     new ListHilite(ids)
                 );
             }
             else
             {
                 desc2 = new RichDescription(
-                    "to issues matching query ",
+                    "for issues matching query ",
                     new Hilite(config[nameof(this.Query)])
                 );
             }
 
             return new ExtendedRichDescription(
                 new RichDescription(
-                    "Add YouTrack comment ",
-                    new Hilite(config[nameof(Comment)])
+                    "Change YouTrack issues' states to ",
+                    new Hilite(config[nameof(State)])
                 ),
                 desc2
             );

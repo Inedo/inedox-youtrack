@@ -14,6 +14,6 @@ namespace Inedo.Extensions.YouTrack.Credentials
         [DisplayName("Permanent token")]
         public SecureString PermanentToken { get; set; }
 
-        public override RichDescription GetDescription() => new RichDescription("(secret)");
+        public override RichDescription GetDescription() => new("(secret)");
     }
 }
