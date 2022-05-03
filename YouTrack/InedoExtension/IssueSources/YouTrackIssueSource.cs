@@ -1,7 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.Threading.Tasks;
+using System.Runtime.CompilerServices;
+using System.Threading;
 using Inedo.Documentation;
 using Inedo.Extensibility.Credentials;
 using Inedo.Extensibility.IssueSources;
@@ -39,10 +40,11 @@ namespace Inedo.Extensions.YouTrack.IssueSources
         [DisplayName("Issue type custom field")]
         public string IssueTypeFieldName { get; set; } = "$YouTrackTypeFieldName";
 
-        public override async Task<IEnumerable<IIssueTrackerIssue>> EnumerateIssuesAsync(IIssueSourceEnumerationContext context)
+        public override async IAsyncEnumerable<IIssueTrackerIssue> EnumerateIssuesAsync(IIssueSourceEnumerationContext context, [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             var client = this.GetClient(context);
-            return await client.GetIssuesAsync(this.ProjectName, this.Filter, this.IssueStatusFieldName, this.IssueTypeFieldName).ConfigureAwait(false);
+            foreach (var i in await client.GetIssuesAsync(this.ProjectName, this.Filter, this.IssueStatusFieldName, this.IssueTypeFieldName, cancellationToken).ConfigureAwait(false))
+                yield return i;
         }
         public override RichDescription GetDescription() => new("YouTrack ", new Hilite(this.ProjectName), " in ", this.ResourceName);
 
@@ -57,13 +59,6 @@ namespace Inedo.Extensions.YouTrack.IssueSources
             {
                 resource = SecureResource.TryCreate(resourceName, credentialContext) as YouTrackSecureResource;
                 var credentials = resource?.GetCredentials(credentialContext);
-                if (resource == null)
-                {
-                    var resCred = ResourceCredentials.TryCreate<LegacyYouTrackResourceCredentials>(resourceName);
-                    resource = (YouTrackSecureResource)resCred?.ToSecureResource();
-                    credentials = resCred?.ToSecureCredentials();
-                }
-
                 if (resource == null)
                     throw new InvalidOperationException($"The resource \"{resourceName}\" was not found.");
 

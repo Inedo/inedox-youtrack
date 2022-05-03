@@ -3,19 +3,14 @@
     <AssemblyName>YouTrack</AssemblyName>
     <RootNamespace>Inedo.Extensions.YouTrack</RootNamespace>
     <OutputType>Library</OutputType>
-    <TargetFrameworks>net452;net5.0</TargetFrameworks>
+    <TargetFramework>net6.0</TargetFramework>
     <LangVersion>latest</LangVersion>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Inedo.SDK" Version="1.12.0">
+    <PackageReference Include="Inedo.SDK" Version="2.0.0-ci.18">
       <ExcludeAssets>runtime</ExcludeAssets>
     </PackageReference>
     <PackageReference Include="Newtonsoft.Json" Version="12.0.3" />
-  </ItemGroup>
-  <ItemGroup Condition="$(TargetFramework) == 'net452'">
-    <Reference Include="System.Net.Http" />
-    <PackageReference Include="System.ValueTuple" Version="4.5.0" />
-    <PackageReference Include="Microsoft.CSharp" Version="4.7.0" />
   </ItemGroup>
 </Project>

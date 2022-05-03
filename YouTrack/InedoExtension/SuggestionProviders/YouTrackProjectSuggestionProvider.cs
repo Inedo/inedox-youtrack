@@ -15,13 +15,13 @@ namespace Inedo.Extensions.YouTrack.SuggestionProviders
     {
         public async Task<IEnumerable<string>> GetSuggestionsAsync(IComponentConfiguration config)
         {
-            var client = this.CreateClient(config);
+            var client = CreateClient(config);
             return (await client.GetProjectsAsync().ConfigureAwait(false))
                 .OrderBy(p => p.Name)
                 .Select(p => p.Name);
         }
 
-        private YouTrackClient CreateClient(IComponentConfiguration config)
+        private static YouTrackClient CreateClient(IComponentConfiguration config)
         {
             var resourceName = config[nameof(YouTrackIssueSource.ResourceName)];
             if (string.IsNullOrEmpty(resourceName))
@@ -34,13 +34,6 @@ namespace Inedo.Extensions.YouTrack.SuggestionProviders
             {
                 resource = SecureResource.TryCreate(resourceName, credentialContext) as YouTrackSecureResource;
                 var credentials = resource?.GetCredentials(credentialContext);
-                if (resource == null)
-                {
-                    var resCred = ResourceCredentials.TryCreate<LegacyYouTrackResourceCredentials>(resourceName);
-                    resource = (YouTrackSecureResource)resCred?.ToSecureResource();
-                    credentials = resCred?.ToSecureCredentials();
-                }
-
                 if (resource == null)
                     throw new InvalidOperationException($"The resource \"{resourceName}\" was not found.");
 

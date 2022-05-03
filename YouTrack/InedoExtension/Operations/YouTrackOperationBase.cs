@@ -70,13 +70,6 @@ namespace Inedo.Extensions.YouTrack.Operations
                 resource = SecureResource.TryCreate(resourceName, credentialContext) as YouTrackSecureResource;
                 credentials = resource?.GetCredentials(credentialContext);
                 if (resource == null)
-                {
-                    var resCred = ResourceCredentials.TryCreate<LegacyYouTrackResourceCredentials>(resourceName);
-                    resource = (YouTrackSecureResource)resCred?.ToSecureResource();
-                    credentials = resCred?.ToSecureCredentials();
-                }
-
-                if (resource == null)
                     throw new InvalidOperationException($"The resource \"{resourceName}\" was not found.");
             }
 
