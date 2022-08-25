@@ -1,5 +1,4 @@
 ﻿using System;
-using Newtonsoft.Json.Linq;
 
 namespace Inedo.Extensions.YouTrack
 {
@@ -12,20 +11,8 @@ namespace Inedo.Extensions.YouTrack
         {
             this.ErrorCode = errorCode;
         }
-        public YouTrackException(int errorCode, JObject errorObj) : base(FormatError(errorCode, errorObj))
-        {
-            this.ErrorCode = errorCode;
-            this.Error = (string)errorObj.Property("error");
-        }
 
         public string Error { get; }
         public int? ErrorCode { get; }
-
-        private static string FormatError(int errorCode, JObject errorObj)
-        {
-            var shortDesc = (string)errorObj.Property("error");
-            var longDesc = (string)errorObj.Property("error_description");
-            return $"{errorCode} - {shortDesc}: {longDesc}";
-        }
     }
 }

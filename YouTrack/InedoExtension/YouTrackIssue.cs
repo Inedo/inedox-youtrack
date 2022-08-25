@@ -1,6 +1,6 @@
 ﻿using System;
+using System.Text.Json.Nodes;
 using Inedo.Extensibility.IssueSources;
-using Newtonsoft.Json.Linq;
 
 namespace Inedo.Extensions.YouTrack
 {
@@ -8,14 +8,14 @@ namespace Inedo.Extensions.YouTrack
     {
         private readonly string status;
 
-        public YouTrackIssue(string id, JObject obj, string url, string status, string type)
+        public YouTrackIssue(string id, JsonObject obj, string url, string status, string type)
         {
             this.ReadableId = id;
-            this.Summary = (string)obj.Property("summary");
-            this.Description = (string)obj.Property("description");
-            this.Reporter = (string)(obj.Property("reporter")?.Value as JObject)?.Property("fullName");
-            this.Created = ReadTimestamp((long?)obj.Property("created"));
-            this.Resolved = ReadTimestamp((long?)obj.Property("resolved"));
+            this.Summary = (string)obj["summary"];
+            this.Description = (string)obj["description"];
+            this.Reporter = (string)(obj["reporter"] as JsonObject)?["fullName"];
+            this.Created = ReadTimestamp((long?)obj["created"]);
+            this.Resolved = ReadTimestamp((long?)obj["resolved"]);
             this.Url = url;
             this.status = status;
             this.Type = type ?? "Issue";

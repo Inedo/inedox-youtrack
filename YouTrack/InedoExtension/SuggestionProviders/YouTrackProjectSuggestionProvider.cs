@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading.Tasks;
 using Inedo.Extensibility;
 using Inedo.Extensibility.Credentials;
@@ -15,10 +14,14 @@ namespace Inedo.Extensions.YouTrack.SuggestionProviders
     {
         public async Task<IEnumerable<string>> GetSuggestionsAsync(IComponentConfiguration config)
         {
+            var names = new List<string>();
+
             var client = CreateClient(config);
-            return (await client.GetProjectsAsync().ConfigureAwait(false))
-                .OrderBy(p => p.Name)
-                .Select(p => p.Name);
+            await foreach (var p in client.GetProjectsAsync().ConfigureAwait(false))
+                names.Add(p.Name);
+
+            names.Sort();
+            return names;
         }
 
         private static YouTrackClient CreateClient(IComponentConfiguration config)

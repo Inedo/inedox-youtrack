@@ -2,13 +2,14 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Net;
+using System.Net.Http;
+using System.Runtime.CompilerServices;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using Inedo.Diagnostics;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 
 namespace Inedo.Extensions.YouTrack
 {
@@ -26,64 +27,76 @@ namespace Inedo.Extensions.YouTrack
         public string Token { get; }
         public string ApiUrl { get; }
 
-        public async Task<IReadOnlyCollection<YouTrackProject>> GetProjectsAsync(CancellationToken cancellationToken = default)
+        public IAsyncEnumerable<YouTrackProject> GetProjectsAsync(CancellationToken cancellationToken = default)
         {
-            var tokens = await this.GetPaginatedListAsync("admin/projects?fields=id,name,shortName", cancellationToken).ConfigureAwait(false);
-            var projects = new List<YouTrackProject>(tokens.Count);
+            return this.GetPaginatedListAsync("admin/projects?fields=id,name,shortName", getProjects, cancellationToken);
 
-            foreach (var obj in tokens.OfType<JObject>())
+            static IEnumerable<YouTrackProject> getProjects(JsonDocument doc)
             {
-                var id = (string)obj.Property("id");
-                if (!string.IsNullOrWhiteSpace(id))
+                foreach (var obj in doc.RootElement.EnumerateArray())
                 {
-                    var name = (string)obj.Property("name");
-                    var shortName = (string)obj.Property("shortName");
-                    projects.Add(new YouTrackProject(id, name, shortName));
+                    if (obj.TryGetProperty("id", out var idProperty))
+                    {
+                        var id = idProperty.GetString();
+                        string name = null;
+                        string shortName = null;
+
+                        if (obj.TryGetProperty("name", out var nameProperty))
+                            name = nameProperty.GetString();
+
+                        if (obj.TryGetProperty("shortName", out var shortNameProperty))
+                            shortName = shortNameProperty.GetString();
+
+                        yield return new YouTrackProject(id, name, shortName);
+                    }
                 }
             }
-
-            this.LogDebug($"Query returned {projects.Count} projects.");
-            return projects;
         }
         public async Task<string> CreateIssueAsync(string projectName, string summary, string description, CancellationToken cancellationToken = default)
         {
+            YouTrackProject project = null;
+
             this.LogDebug("Fetching list of projects...");
-            var project = (await this.GetProjectsAsync(cancellationToken).ConfigureAwait(false))
-                .FirstOrDefault(p => p.Name == projectName || p.ShortName == projectName);
+            await foreach (var p in this.GetProjectsAsync(cancellationToken).ConfigureAwait(false))
+            {
+                if (p.Name == projectName || p.ShortName == projectName)
+                {
+                    project = p;
+                    break;
+                }
+            }
 
             if (project == null)
                 throw new YouTrackException($"Project {projectName} not found in YouTrack.");
 
             this.LogDebug($"Project {projectName} found: ID={project.Id}, ShortName={project.ShortName}");
 
-            var request = this.CreateRequest("issues?fields=idReadable");
-            request.ContentType = "application/json";
-            request.Method = "POST";
-
-            using (var writer = new JsonTextWriter(new StreamWriter(await request.GetRequestStreamAsync().ConfigureAwait(false), InedoLib.UTF8Encoding)))
+            using var request = this.CreateRequest(HttpMethod.Post, "issues?fields=idReadable");
+            using var buffer = new MemoryStream();
+            using (var writer = new Utf8JsonWriter(buffer))
             {
                 writer.WriteStartObject();
 
                 writer.WritePropertyName("project");
                 writer.WriteStartObject();
-                writer.WritePropertyName("id");
-                writer.WriteValue(project.Id);
+                writer.WriteString("id", project.Id);
                 writer.WriteEndObject();
 
-                writer.WritePropertyName("summary");
-                writer.WriteValue(summary);
-
-                writer.WritePropertyName("description");
-                writer.WriteValue(description);
+                writer.WriteString("summary", summary);
+                writer.WriteString("description", description); 
 
                 writer.WriteEndObject();
             }
 
-            using var response = await GetResponseAsync(request, cancellationToken).ConfigureAwait(false);
-            using var reader = new JsonTextReader(new StreamReader(response.GetResponseStream(), Encoding.UTF8));
-            var obj = JObject.Load(reader);
+            buffer.Position = 0;
+            request.Content = new StreamContent(buffer);
+            request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
 
-            var id = (string)obj.Property("idReadable");
+            using var response = await GetResponseAsync(request, cancellationToken).ConfigureAwait(false);
+            using var responseStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            using var doc = await JsonDocument.ParseAsync(responseStream, cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            var id = doc.RootElement.GetProperty("idReadable").GetString();
             this.LogInformation($"Created issue {id}.");
             return id;
         }
@@ -107,15 +120,19 @@ namespace Inedo.Extensions.YouTrack
 
             try
             {
-                var tokens = await this.GetPaginatedListAsync("issues?fields=id,idReadable,summary,description,reporter(fullName),created,resolved,customFields(name,value(name))&query=" + Uri.EscapeDataString(query.ToString()), cancellationToken).ConfigureAwait(false);
-                var issues = new List<YouTrackIssue>(tokens.Count);
+                var tokens = this.GetPaginatedListAsync(
+                    "issues?fields=id,idReadable,summary,description,reporter(fullName),created,resolved,customFields(name,value(name))&query=" + Uri.EscapeDataString(query.ToString()),
+                    getObjects,
+                    cancellationToken
+                );
+                var issues = new List<YouTrackIssue>();
 
                 var baseUrl = this.ApiUrl.TrimEnd('/');
-                baseUrl = baseUrl.Substring(0, baseUrl.LastIndexOf('/')) + "/issue/";
+                baseUrl = baseUrl[..baseUrl.LastIndexOf('/')] + "/issue/";
 
-                foreach (var obj in tokens.OfType<JObject>())
+                await foreach (var obj in tokens.ConfigureAwait(false))
                 {
-                    var id = (string)obj.Property("idReadable");
+                    var id = (string)obj["idReadable"];
                     if (!string.IsNullOrWhiteSpace(id))
                     {
                         string status = null;
@@ -139,6 +156,12 @@ namespace Inedo.Extensions.YouTrack
                 // Ideally, YouTrack would add some way to query that won't raise this as an error, or at least return an easily identifiable error code.
                 return InedoLib.EmptyArray<YouTrackIssue>();
             }
+
+            static IEnumerable<JsonObject> getObjects(JsonDocument doc)
+            {
+                foreach (var obj in doc.RootElement.EnumerateArray())
+                    yield return JsonObject.Create(obj);
+            }
         }
         public async Task RunCommandAsync(string command, IEnumerable<string> issueIds, string comment = null, CancellationToken cancellationToken = default)
         {
@@ -146,30 +169,24 @@ namespace Inedo.Extensions.YouTrack
             if (idList.Count == 0)
                 return;
 
-            var request = this.CreateRequest("commands");
-            request.ContentType = "application/json";
-            request.Method = "POST";
+            using var request = this.CreateRequest(HttpMethod.Post, "commands");
 
-            using (var writer = new JsonTextWriter(new StreamWriter(await request.GetRequestStreamAsync().ConfigureAwait(false), InedoLib.UTF8Encoding)))
+            using var buffer = new MemoryStream();
+            using (var writer = new Utf8JsonWriter(buffer))
             {
                 writer.WriteStartObject();
 
-                writer.WritePropertyName("query");
-                writer.WriteValue(command);
+                writer.WriteString("query", command);
 
                 if (!string.IsNullOrWhiteSpace(comment))
-                {
-                    writer.WritePropertyName("comment");
-                    writer.WriteValue(comment);
-                }
+                    writer.WriteString("comment", comment);
 
                 writer.WritePropertyName("issues");
                 writer.WriteStartArray();
                 foreach (var i in idList)
                 {
                     writer.WriteStartObject();
-                    writer.WritePropertyName("idReadable");
-                    writer.WriteValue(i);
+                    writer.WriteString("idReadable", i);
                     writer.WriteEndObject();
                 }
 
@@ -178,16 +195,25 @@ namespace Inedo.Extensions.YouTrack
                 writer.WriteEndObject();
             }
 
-            using var response = await GetResponseAsync(request, cancellationToken).ConfigureAwait(false);
+            buffer.Position = 0;
+            request.Content = new StreamContent(buffer);
+            request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
 
-            using var reader = new StreamReader(response.GetResponseStream(), Encoding.UTF8);
-            var rubbish = reader.ReadToEnd();
+            using var response = await GetResponseAsync(request, cancellationToken).ConfigureAwait(false);
         }
         public async Task EnsureVersionAsync(string versionField, string projectName, string version, bool? released, bool? archived, CancellationToken cancellationToken)
         {
             this.LogDebug("Fetching list of projects...");
-            var project = (await this.GetProjectsAsync(cancellationToken).ConfigureAwait(false))
-                .FirstOrDefault(p => p.Name == projectName || p.ShortName == projectName);
+            YouTrackProject project = null;
+
+            await foreach (var p in this.GetProjectsAsync(cancellationToken).ConfigureAwait(false))
+            {
+                if (p.Name == projectName || p.ShortName == projectName)
+                {
+                    project = p;
+                    break;
+                }
+            }
 
             if (project == null)
                 throw new YouTrackException($"Project {projectName} not found in YouTrack.");
@@ -195,11 +221,14 @@ namespace Inedo.Extensions.YouTrack
             this.LogDebug($"Project {projectName} found: ID={project.Id}, ShortName={project.ShortName}");
 
             this.LogDebug("Fetching list of custom fields...");
-            var customField = (await this.GetPaginatedListAsync($"admin/projects/{project.Id}/customFields?fields=id,field(name)", cancellationToken).ConfigureAwait(false))
-                .OfType<JObject>()
-                .FirstOrDefault(f => (string)(f.Property("field")?.Value as JObject)?.Property("name") == versionField);
+            var customFieldId = await FirstOrDefaultAsync(
+                this.GetPaginatedListAsync(
+                    $"admin/projects/{project.Id}/customFields?fields=id,field(name)",
+                    d => getFieldId(d, versionField),
+                    cancellationToken
+                )
+            ).ConfigureAwait(false);
 
-            var customFieldId = (string)customField?.Property("id");
             if (string.IsNullOrEmpty(customFieldId))
                 throw new YouTrackException($"YouTrack custom field {versionField} not found in project {projectName}.");
 
@@ -207,9 +236,14 @@ namespace Inedo.Extensions.YouTrack
 
             this.LogDebug("Fetching custom field values...");
             var customFieldUrl = $"admin/projects/{project.Id}/customFields/{customFieldId}/bundle/values?fields=id,name,released,archived";
-            var data = (await this.GetPaginatedListAsync(customFieldUrl, default).ConfigureAwait(false))
-                .OfType<JObject>()
-                .FirstOrDefault(f => (string)f.Property("name") == version);
+
+            var data = await FirstOrDefaultAsync(
+                this.GetPaginatedListAsync(
+                    customFieldUrl,
+                    d => getCustomField(d, version),
+                    cancellationToken
+                )
+            ).ConfigureAwait(false);
 
             bool update = false;
 
@@ -217,12 +251,13 @@ namespace Inedo.Extensions.YouTrack
             {
                 this.LogDebug($"Custom field value {version} does not already exist.");
 
-                data = new JObject(
-                    new JProperty("name", version),
-                    new JProperty("released", released ?? false),
-                    new JProperty("archived", archived ?? false),
-                    new JProperty("type", "$VersionBundleElement")
-                );
+                data = new JsonObject
+                {
+                    ["name"] = version,
+                    ["released"] = released ?? false,
+                    ["archived"] = archived ?? false,
+                    ["type"] = "$VersionBundleElement"
+                };
 
                 update = true;
             }
@@ -230,7 +265,7 @@ namespace Inedo.Extensions.YouTrack
             {
                 this.LogDebug($"Custom field value {version} already exists.");
 
-                if ((bool)data.Property("released") != released || (bool)data.Property("archived") != archived)
+                if ((bool)data["released"] != released || (bool)data["archived"] != archived)
                 {
                     if (released.HasValue)
                     {
@@ -252,99 +287,148 @@ namespace Inedo.Extensions.YouTrack
             {
                 this.LogDebug($"Creating/updating version {version}...");
 
-                var request = this.CreateRequest($"admin/projects/{project.Id}/customFields/{customFieldId}/bundle/values/{(string)data.Property("id")}");
-                request.ContentType = "application/json";
-                request.Method = "POST";
-
-                using (var writer = new JsonTextWriter(new StreamWriter(await request.GetRequestStreamAsync().ConfigureAwait(false), InedoLib.UTF8Encoding)))
-                {
-                    data.WriteTo(writer);
-                }
+                using var request = this.CreateRequest(HttpMethod.Post, $"admin/projects/{project.Id}/customFields/{customFieldId}/bundle/values/{(string)data["id"]}");
+                request.Content = new StringContent(data.ToJsonString(), InedoLib.UTF8Encoding, "application/json");
 
                 using var response = await GetResponseAsync(request, cancellationToken).ConfigureAwait(false);
-
                 this.LogInformation($"Version {version} update complete.");
             }
             else
             {
                 this.LogInformation($"Custom field value {version} already exists and no update is needed.");
             }
+            static IEnumerable<string> getFieldId(JsonDocument doc, string name)
+            {
+                foreach (var obj in doc.RootElement.EnumerateArray())
+                {
+                    if (obj.TryGetProperty("field", out var fieldElement) && fieldElement.ValueKind == JsonValueKind.Object)
+                    {
+                        if (fieldElement.TryGetProperty("name", out var nameElement) && fieldElement.ValueEquals(name))
+                        {
+                            if (obj.TryGetProperty("id", out var idElement))
+                                yield return idElement.GetString();
+                        }
+                    }
+                }
+            }
+
+            static IEnumerable<JsonObject> getCustomField(JsonDocument doc, string name)
+            {
+                foreach (var obj in doc.RootElement.EnumerateArray())
+                {
+                    if (obj.TryGetProperty("name", out var nameElement) && nameElement.ValueEquals(name))
+                        yield return JsonObject.Create(obj);
+                }
+            }
         }
         public void Log(IMessage message) => this.log?.Log(message);
 
-        private async Task<IReadOnlyCollection<JToken>> GetPaginatedListAsync(string relativeUrl, CancellationToken cancellationToken)
+        private static async Task<T> FirstOrDefaultAsync<T>(IAsyncEnumerable<T> values)
+        {
+            await foreach (var v in values.ConfigureAwait(false))
+                return v;
+
+            return default;
+        }
+
+        private async IAsyncEnumerable<T> GetPaginatedListAsync<T>(string relativeUrl, Func<JsonDocument, IEnumerable<T>> getItems, [EnumeratorCancellation] CancellationToken cancellationToken)
         {
             const int pageSize = 40;
-
-            var requestUrl = relativeUrl + (relativeUrl.IndexOf('?') >= 0 ? "&" : "?");
-
-            var results = new List<JToken>();
+            var requestUrl = relativeUrl + (relativeUrl.Contains('?') ? "&" : "?");
+            int totalCount = 0;
 
             while (true)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var request = this.CreateRequest(requestUrl + $"$skip={results.Count}&$top={pageSize}");
+                var request = this.CreateRequest(HttpMethod.Get, requestUrl + $"$skip={totalCount}&$top={pageSize}");
 
                 using var response = await GetResponseAsync(request, cancellationToken).ConfigureAwait(false);
-                using var reader = new JsonTextReader(new StreamReader(response.GetResponseStream(), Encoding.UTF8));
+                using var responseStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+                using var doc = await JsonDocument.ParseAsync(responseStream, cancellationToken: cancellationToken).ConfigureAwait(false);
 
-                var array = JArray.Load(reader);
-                if (array.Count > 0)
-                    results.AddRange(array);
+                int count = 0;
 
-                if (array.Count < pageSize)
-                    return results;
+                foreach (var item in getItems(doc))
+                {
+                    count++;
+                    yield return item;
+                }
+
+                totalCount += count;
+
+                if (count < pageSize)
+                    break;
             }
         }
-        private HttpWebRequest CreateRequest(string relativeUrl)
+        private HttpRequestMessage CreateRequest(HttpMethod method, string relativeUrl)
         {
-            var request = WebRequest.CreateHttp(this.ApiUrl + relativeUrl);
+            var request = new HttpRequestMessage(method, this.ApiUrl + relativeUrl);
             if (!string.IsNullOrWhiteSpace(this.Token))
-                request.Headers.Add("Authorization", "Bearer " + this.Token);
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", this.Token);
 
-            request.Accept = "application/json";
-            request.AutomaticDecompression = DecompressionMethods.GZip;
-            request.UserAgent = $"{SDK.ProductName}/{SDK.ProductVersion} (YouTrack/{typeof(YouTrackClient).Assembly.GetName().Version})";
+            request.Headers.Accept.ParseAdd("application/json");
             this.LogDebug($"Making request to {request.RequestUri}...");
             return request;
         }
-        private static string ReadCustomFieldValue(JObject obj, string customFieldName)
+        private static string ReadCustomFieldValue(JsonObject obj, string customFieldName)
         {
-            if (obj.Property("customFields")?.Value is not JArray fields)
+            if (obj["customFields"] is not JsonArray fields)
                 return null;
 
-            var match = fields.OfType<JObject>().FirstOrDefault(f => (string)f.Property("name") == customFieldName);
+            var match = fields.OfType<JsonObject>().FirstOrDefault(f => (string)f["name"] == customFieldName);
             if (match == null)
                 return null;
 
-            return match.Property("value")?.Value is JObject valueObj ? (string)valueObj.Property("name") : null;
+            return match["value"] is JsonObject valueObj ? (string)valueObj["name"] : null;
         }
-        private static async Task<WebResponse> GetResponseAsync(HttpWebRequest request, CancellationToken cancellationToken)
+        private static async Task<HttpResponseMessage> GetResponseAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            using var reg = cancellationToken.Register(() => request.Abort());
+            HttpResponseMessage response = null;
             try
             {
-                return await request.GetResponseAsync().ConfigureAwait(false);
+                response = await SDK.CreateHttpClient().SendAsync(request, cancellationToken).ConfigureAwait(false);
+                if (!response.IsSuccessStatusCode)
+                {
+                    try
+                    {
+                        using var responseStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+                        if (response.Content.Headers.ContentType?.MediaType == "application/json")
+                        {
+                            using var doc = await JsonDocument.ParseAsync(responseStream, cancellationToken: cancellationToken).ConfigureAwait(false);
+                            var obj = doc.RootElement;
+                            var errorMessage = string.Empty;
+                            var errorDesc = string.Empty;
+                            if (obj.TryGetProperty("error", out var error))
+                                errorMessage = error.GetString();
+                            if (obj.TryGetProperty("error_description", out var desc))
+                                errorDesc = desc.GetString();
+
+                            throw new YouTrackException((int)response.StatusCode, $"{(int)response.StatusCode} - {errorMessage}: {errorDesc}");
+                        }
+                        else
+                        {
+                            using var reader = new StreamReader(responseStream, InedoLib.UTF8Encoding);
+                            var buffer = new char[8192];
+                            int count = await reader.ReadBlockAsync(buffer, cancellationToken).ConfigureAwait(false);
+                            if (count > 0)
+                                throw new YouTrackException((int)response.StatusCode, new string(buffer, 0, count));
+                            else
+                                throw new YouTrackException((int)response.StatusCode, response.StatusCode.ToString());
+                        }
+                    }
+                    finally
+                    {
+                        response.Dispose();
+                    }
+                }
+
+                return response;
             }
-            catch (WebException ex) when (ex.Response is HttpWebResponse response)
+            catch
             {
-                if (response.ContentType?.StartsWith("application/json") == true)
-                {
-                    using var reader = new JsonTextReader(new StreamReader(response.GetResponseStream(), Encoding.UTF8));
-                    var obj = JObject.Load(reader);
-                    throw new YouTrackException((int)response.StatusCode, obj);
-                }
-                else
-                {
-                    using var reader = new StreamReader(response.GetResponseStream(), Encoding.UTF8);
-                    var buffer = new char[8192];
-                    int count = reader.ReadBlock(buffer, 0, buffer.Length);
-                    if (count > 0)
-                        throw new YouTrackException((int)response.StatusCode, new string(buffer, 0, count));
-                    else
-                        throw new YouTrackException((int)response.StatusCode, response.StatusDescription);
-                }
+                response?.Dispose();
+                throw;
             }
         }
         private static string MakeUrlCanonical(string apiUrl)
