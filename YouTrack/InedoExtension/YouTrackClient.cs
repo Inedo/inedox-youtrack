@@ -100,7 +100,7 @@ namespace Inedo.Extensions.YouTrack
             this.LogInformation($"Created issue {id}.");
             return id;
         }
-        public async Task<IReadOnlyCollection<YouTrackIssue>> GetIssuesAsync(string projectName = null, string customQuery = null, string statusField = null, string typeField = null, CancellationToken cancellationToken = default)
+        public async IAsyncEnumerable<YouTrackIssue> EnumerateIssuesAsync(string projectName = null, string customQuery = null, string statusField = null, string typeField = null, [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             var query = new StringBuilder();
             if (!string.IsNullOrWhiteSpace(projectName))
@@ -118,43 +118,30 @@ namespace Inedo.Extensions.YouTrack
                 query.Append(customQuery);
             }
 
-            try
+            var tokens = this.GetPaginatedListAsync(
+                "issues?fields=id,idReadable,summary,description,reporter(fullName),created,resolved,customFields(name,value(name))&query=" + Uri.EscapeDataString(query.ToString()),
+                getObjects,
+                cancellationToken
+            );
+
+            var baseUrl = this.ApiUrl.TrimEnd('/');
+            baseUrl = baseUrl[..baseUrl.LastIndexOf('/')] + "/issue/";
+
+            await foreach (var obj in tokens.ConfigureAwait(false))
             {
-                var tokens = this.GetPaginatedListAsync(
-                    "issues?fields=id,idReadable,summary,description,reporter(fullName),created,resolved,customFields(name,value(name))&query=" + Uri.EscapeDataString(query.ToString()),
-                    getObjects,
-                    cancellationToken
-                );
-                var issues = new List<YouTrackIssue>();
-
-                var baseUrl = this.ApiUrl.TrimEnd('/');
-                baseUrl = baseUrl[..baseUrl.LastIndexOf('/')] + "/issue/";
-
-                await foreach (var obj in tokens.ConfigureAwait(false))
+                var id = (string)obj["idReadable"];
+                if (!string.IsNullOrWhiteSpace(id))
                 {
-                    var id = (string)obj["idReadable"];
-                    if (!string.IsNullOrWhiteSpace(id))
-                    {
-                        string status = null;
-                        if (!string.IsNullOrWhiteSpace(statusField))
-                            status = ReadCustomFieldValue(obj, statusField);
+                    string status = null;
+                    if (!string.IsNullOrWhiteSpace(statusField))
+                        status = ReadCustomFieldValue(obj, statusField);
 
-                        string type = null;
-                        if (!string.IsNullOrWhiteSpace(typeField))
-                            type = ReadCustomFieldValue(obj, typeField);
+                    string type = null;
+                    if (!string.IsNullOrWhiteSpace(typeField))
+                        type = ReadCustomFieldValue(obj, typeField);
 
-                        issues.Add(new YouTrackIssue(id, obj, baseUrl + id, status, type));
-                    }
+                    yield return new YouTrackIssue(id, obj, baseUrl + id, status, type);
                 }
-
-                return issues;
-            }
-            catch (YouTrackException ex) when (ex.ErrorCode == 400 && ex.Error == "invalid_query")
-            {
-                // YouTrack returns an invalid query error if you try to query for a Fix version that is not defined in YouTrack.
-                // Returning an empty list in the event of any invalid query error is not optimal, but probably better than spamming the event log with errors.
-                // Ideally, YouTrack would add some way to query that won't raise this as an error, or at least return an easily identifiable error code.
-                return InedoLib.EmptyArray<YouTrackIssue>();
             }
 
             static IEnumerable<JsonObject> getObjects(JsonDocument doc)
@@ -162,6 +149,14 @@ namespace Inedo.Extensions.YouTrack
                 foreach (var obj in doc.RootElement.EnumerateArray())
                     yield return JsonObject.Create(obj);
             }
+        }
+        public async Task<IReadOnlyCollection<YouTrackIssue>> GetIssuesAsync(string projectName = null, string customQuery = null, string statusField = null, string typeField = null, CancellationToken cancellationToken = default)
+        {
+            var issues = new List<YouTrackIssue>();
+            await foreach (var issue in EnumerateIssuesAsync(projectName, customQuery, statusField, typeField, cancellationToken).ConfigureAwait(false))
+                issues.Add(issue);
+
+            return issues;
         }
         public async Task RunCommandAsync(string command, IEnumerable<string> issueIds, string comment = null, CancellationToken cancellationToken = default)
         {
@@ -343,22 +338,41 @@ namespace Inedo.Extensions.YouTrack
 
                 var request = this.CreateRequest(HttpMethod.Get, requestUrl + $"$skip={totalCount}&$top={pageSize}");
 
-                using var response = await GetResponseAsync(request, cancellationToken).ConfigureAwait(false);
-                using var responseStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-                using var doc = await JsonDocument.ParseAsync(responseStream, cancellationToken: cancellationToken).ConfigureAwait(false);
-
-                int count = 0;
-
-                foreach (var item in getItems(doc))
+                HttpResponseMessage response = null;
+                try
                 {
-                    count++;
-                    yield return item;
+                    try
+                    {
+                        response = await GetResponseAsync(request, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (YouTrackException ex) when (ex.ErrorCode == 400 && ex.Error == "invalid_query")
+                    {
+                        // YouTrack returns an invalid query error if you try to query for a Fix version that is not defined in YouTrack.
+                        // Returning an empty list in the event of any invalid query error is not optimal, but probably better than spamming the event log with errors.
+                        // Ideally, YouTrack would add some way to query that won't raise this as an error, or at least return an easily identifiable error code.
+                        yield break;
+                    }
+
+                    using var responseStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+                    using var doc = await JsonDocument.ParseAsync(responseStream, cancellationToken: cancellationToken).ConfigureAwait(false);
+
+                    int count = 0;
+
+                    foreach (var item in getItems(doc))
+                    {
+                        count++;
+                        yield return item;
+                    }
+
+                    totalCount += count;
+
+                    if (count < pageSize)
+                        break;
                 }
-
-                totalCount += count;
-
-                if (count < pageSize)
-                    break;
+                finally
+                {
+                    response?.Dispose();
+                }
             }
         }
         private HttpRequestMessage CreateRequest(HttpMethod method, string relativeUrl)
@@ -404,7 +418,7 @@ namespace Inedo.Extensions.YouTrack
                             if (obj.TryGetProperty("error_description", out var desc))
                                 errorDesc = desc.GetString();
 
-                            throw new YouTrackException((int)response.StatusCode, $"{(int)response.StatusCode} - {errorMessage}: {errorDesc}");
+                            throw new YouTrackException((int)response.StatusCode, $"{(int)response.StatusCode} - {errorMessage}: {errorDesc}", errorMessage);
                         }
                         else
                         {

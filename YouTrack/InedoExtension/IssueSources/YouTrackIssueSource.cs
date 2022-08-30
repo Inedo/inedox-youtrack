@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.Runtime.CompilerServices;
 using System.Threading;
 using Inedo.Documentation;
 using Inedo.Extensibility.Credentials;
@@ -40,11 +39,10 @@ namespace Inedo.Extensions.YouTrack.IssueSources
         [DisplayName("Issue type custom field")]
         public string IssueTypeFieldName { get; set; } = "$YouTrackTypeFieldName";
 
-        public override async IAsyncEnumerable<IIssueTrackerIssue> EnumerateIssuesAsync(IIssueSourceEnumerationContext context, [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        public override IAsyncEnumerable<IIssueTrackerIssue> EnumerateIssuesAsync(IIssueSourceEnumerationContext context, CancellationToken cancellationToken = default)
         {
             var client = this.GetClient(context);
-            foreach (var i in await client.GetIssuesAsync(this.ProjectName, this.Filter, this.IssueStatusFieldName, this.IssueTypeFieldName, cancellationToken).ConfigureAwait(false))
-                yield return i;
+            return client.EnumerateIssuesAsync(this.ProjectName, this.Filter, this.IssueStatusFieldName, this.IssueTypeFieldName, cancellationToken);
         }
         public override RichDescription GetDescription() => new("YouTrack ", new Hilite(this.ProjectName), " in ", this.ResourceName);
 

@@ -7,8 +7,9 @@ namespace Inedo.Extensions.YouTrack
         public YouTrackException(string message) : base(message)
         {
         }
-        public YouTrackException(int errorCode, string message) : base($"{errorCode} - {message}")
+        public YouTrackException(int errorCode, string message, string error = null) : base($"{errorCode} - {message}")
         {
+            this.Error = error;
             this.ErrorCode = errorCode;
         }
 
